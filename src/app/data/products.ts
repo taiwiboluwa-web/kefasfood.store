@@ -1,37 +1,3 @@
-import ugbaImage from 'figma:asset/c68c0bb059bf91dfdc6206da48546315d8141527.png';
-import panlakikaImage from 'figma:asset/7118cc46343b577a92450aeb88fd326fad8d4038.png';
-import crayfishPaintImage from 'figma:asset/0a9f2b114138428ca61e0e557f4b4132b5851ff2.png';
-import crayfishImage from 'figma:asset/261d54092246126ed2155f95017b55f108ad31cd.png';
-import stockfishImage from '../../imports/Gemini_Generated_Image_78idby78idby78id-1.png';
-import marugboImage from 'figma:asset/88a61f331b32ea8fb5bd9a0eaf290f9b647b7f84.png';
-import kilishiImage from 'figma:asset/bac21d5d3c8dff767e9554fc7d452d8699514f26.png';
-import garriIjebuImage from 'figma:asset/1c260d02146d57917953c8a49e0728d4f386fed9.png';
-import pupuruImage from 'figma:asset/43edfd391ba64c9c52521a1cf5bde6aed95b358f.png';
-import tapiocaImage from 'figma:asset/47c2fa613a25f39ff15d07a5ab2837c35c010d21.png';
-import garriYellowImage from 'figma:asset/40a538ddbe89d3666a8c50f1f98abd40fbf71da2.png';
-import eluboImage from 'figma:asset/68e918be9298ccb4dca7cff4dd6ce5c3f0425a92.png';
-import pepperSoupSpiceImage from 'figma:asset/6645c4914bf7815d1c474112fe941cbe4a096a1d.png';
-import suyaSpiceImage from 'figma:asset/28afa8dccc68c6da0a8f2f3f0d4d174cb4f6733c.png';
-import locustBeansImage from 'figma:asset/722ded55ffe51e39e2c4df0ea30b609251f8ebe7.png';
-import tigernutImage from 'figma:asset/d0848aa8009f4e5d58e6460a5b847be7c570d060.png';
-import zoboLeavesImage from 'figma:asset/92054193fec7e05317724e509ffb22324b88696d.png';
-import palmOilImage from 'figma:asset/d8a5a00365cdb54f22b59aaa0e03fcf914385145.png';
-import honeyBeansImage from 'figma:asset/29f480ce91a133c72d2f1a3962c30fef808d91fb.png';
-import ofadaRiceImage from 'figma:asset/b0cf58245f714eb1d9144be20a945ed1c4c5067a.png';
-import egusiImage from 'figma:asset/ab99c011473e774e205b9eb9899821cb2b635567.png';
-import ogbonoImage from 'figma:asset/d74ad80a6452e0fe2b75370849699785edbe1b4b.png';
-import abachaImage from 'figma:asset/d1504be10e0974e8e63dea9152c4c57311c1289b.png';
-import catfishCutletImage from 'figma:asset/c936ffa90e5bc8b00c1a4bb4db38fafd1c06bf4f.png';
-import goatMeatImage from 'figma:asset/e7cc9c8d2c13f5ed91f2f09ce18a7f4fc753b4e1.png';
-import catfishWholeImage from 'figma:asset/83d89f967e1a0ece391945d11938af4141da88c4.png';
-import okpaImage from 'figma:asset/37c421ad92e8a354927bc0c1e2aabe4b86c15e0d.png';
-import ponmoImage from 'figma:asset/0587b6e475442fda6ea2a36d99ff4746a0c57ca9.png';
-import unwashedPonmoImage from 'figma:asset/ded1cf880b7aba0f7fcd2e0fd192a98cafed2d11.png';
-import soakedPonmoImage from 'figma:asset/d19dd2efbf5a9efc3e6f9d1f2bcc9e040248f24f.png';
-import ukwaImage from 'figma:asset/5e0b9b1dce62ea4d9601cb55bd75464609b9ec41.png';
-import bangaSpiceImage from 'figma:asset/4d3f9df38a81e709018b6b4511bca133aa22c7e8.png';
-import driedPrawnImage from 'figma:asset/545af38a1d9aa52704af7612ca3fa6bfd4c1dc85.png';
-
 export interface Product {
   id: string;
   name: string;
@@ -40,7 +6,7 @@ export interface Product {
   weight: string;
   description: string;
   image: string;
-  imageUrl?: string; // Direct image URL for specific products
+  imageUrl?: string;
   inStock: boolean;
   variants?: { weight: string; price: number }[];
   badge?: 'Popular' | 'Best Seller' | 'New';
@@ -58,7 +24,6 @@ export const categories = [
 ];
 
 export const products: Product[] = [
-  // Cassava/Tuber Flakes
   {
     id: '1',
     name: 'Tapioca',
@@ -67,7 +32,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Premium quality tapioca from cassava',
     image: 'tapioca cassava flour',
-    imageUrl: tapiocaImage,
+    imageUrl: '/Tapioca.png',
     inStock: true
   },
   {
@@ -78,7 +43,7 @@ export const products: Product[] = [
     weight: '2.5kg',
     description: 'Traditional fermented cassava flour',
     image: 'pupuru cassava',
-    imageUrl: pupuruImage,
+    imageUrl: '/Pupuru.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -95,7 +60,7 @@ export const products: Product[] = [
     weight: '2kg',
     description: 'Premium Ijebu garri with authentic taste',
     image: 'garri ijebu cassava',
-    imageUrl: garriIjebuImage,
+    imageUrl: '/Garri Ijebu.png',
     inStock: true,
     badge: 'Best Seller',
     variants: [
@@ -111,7 +76,7 @@ export const products: Product[] = [
     weight: '1.5kg',
     description: 'Finely processed yellow garri',
     image: 'yellow garri cassava',
-    imageUrl: garriYellowImage,
+    imageUrl: '/Garri Yellow.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -127,7 +92,7 @@ export const products: Product[] = [
     weight: '2kg',
     description: 'Pure yam flour for making amala',
     image: 'elubo yam flour',
-    imageUrl: eluboImage,
+    imageUrl: '/Elubo Yam Flour.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -135,8 +100,6 @@ export const products: Product[] = [
       { weight: '5kg', price: 23.99 }
     ]
   },
-
-  // Spices & Flavors
   {
     id: '6',
     name: 'Pepper Soup Spices',
@@ -145,7 +108,7 @@ export const products: Product[] = [
     weight: '50g',
     description: 'Authentic blended Nigerian pepper soup spice mix',
     image: 'pepper soup spices',
-    imageUrl: pepperSoupSpiceImage,
+    imageUrl: '/Pepper Soup Spices.png',
     inStock: true,
     badge: 'Best Seller',
     variants: [
@@ -162,7 +125,7 @@ export const products: Product[] = [
     weight: '150g',
     description: 'Traditional suya spice blend for grilled meat',
     image: 'suya spice seasoning',
-    imageUrl: suyaSpiceImage,
+    imageUrl: '/Suya Spice.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -178,7 +141,7 @@ export const products: Product[] = [
     weight: '200g',
     description: 'Fermented locust beans for soups and stews',
     image: 'locust beans iru',
-    imageUrl: locustBeansImage,
+    imageUrl: '/Iru Ekiti (Locust Beans).png',
     inStock: true,
     variants: [
       { weight: '200g', price: 2.49 },
@@ -193,7 +156,7 @@ export const products: Product[] = [
     weight: '250g',
     description: 'Traditional soup herb mix - Premium marugbo blend for authentic Nigerian soups and stews',
     image: 'marugbo spices herbs',
-    imageUrl: marugboImage,
+    imageUrl: '/Marugbo Spice.png',
     inStock: true,
     badge: 'Best Seller',
     variants: [
@@ -208,9 +171,9 @@ export const products: Product[] = [
     category: 'Spices & Flavors',
     price: 5.99,
     weight: '250g',
-    description: 'Authentic Nigerian banga spice blend - specially crafted for palm nut soup and stews. This aromatic mix of traditional herbs and spices brings out the rich, authentic flavor of banga dishes. Made from premium ingredients to deliver restaurant-quality taste at home.',
+    description: 'Authentic Nigerian banga spice blend - specially crafted for palm nut soup and stews.',
     image: 'banga spice seasoning',
-    imageUrl: bangaSpiceImage,
+    imageUrl: '/Banga Spice.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -218,8 +181,6 @@ export const products: Product[] = [
       { weight: '500g', price: 10.99 }
     ]
   },
-
-  // Snacks, Drinks & Nuts
   {
     id: '11',
     name: 'Tigernut',
@@ -228,7 +189,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Premium tigernuts for drinks or snacking',
     image: 'tigernut drink',
-    imageUrl: tigernutImage,
+    imageUrl: '/Tigernut.png',
     inStock: true
   },
   {
@@ -239,12 +200,10 @@ export const products: Product[] = [
     weight: '300g',
     description: 'Dried hibiscus leaves for zobo drink',
     image: 'zobo hibiscus leaves',
-    imageUrl: zoboLeavesImage,
+    imageUrl: '/Zobo Leaves.png',
     inStock: true,
     badge: 'Popular'
   },
-
-  // Oils
   {
     id: '13',
     name: 'Palm Oil',
@@ -253,7 +212,7 @@ export const products: Product[] = [
     weight: '1.5kg',
     description: 'Pure red palm oil from Nigeria',
     image: 'red palm oil',
-    imageUrl: palmOilImage,
+    imageUrl: '/Palm Oil.png',
     inStock: true,
     badge: 'Best Seller',
     variants: [
@@ -264,8 +223,6 @@ export const products: Product[] = [
       { weight: '25kg', price: 109.99 }
     ]
   },
-
-  // Grains & Seeds
   {
     id: '14',
     name: 'Sweet Honey Beans',
@@ -274,7 +231,7 @@ export const products: Product[] = [
     weight: '2kg',
     description: 'Premium white honey beans',
     image: 'honey beans white',
-    imageUrl: honeyBeansImage,
+    imageUrl: '/Sweet Honey Beans.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -288,9 +245,9 @@ export const products: Product[] = [
     category: 'Grains & Seeds',
     price: 6.99,
     weight: '1kg',
-    description: 'Authentic Nigerian Ofada rice - unpolished brown rice with a unique aroma and nutty flavor, perfect for traditional Ofada sauce',
+    description: 'Authentic Nigerian Ofada rice',
     image: 'ofada rice brown',
-    imageUrl: ofadaRiceImage,
+    imageUrl: '/Ofada Rice.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -306,7 +263,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Ground melon seeds for egusi soup',
     image: 'egusi melon seeds',
-    imageUrl: egusiImage,
+    imageUrl: '/Egusi.png',
     inStock: true,
     badge: 'Best Seller',
     variants: [
@@ -323,12 +280,10 @@ export const products: Product[] = [
     weight: '250g',
     description: 'Wild mango seeds for draw soup',
     image: 'ogbono wild mango',
-    imageUrl: ogbonoImage,
+    imageUrl: '/Ogbono.png',
     inStock: true,
     badge: 'Popular'
   },
-
-  // Traditional Dish
   {
     id: '18',
     name: 'Abacha',
@@ -337,7 +292,7 @@ export const products: Product[] = [
     weight: '250g',
     description: 'African salad (dried shredded cassava)',
     image: 'abacha african salad',
-    imageUrl: abachaImage,
+    imageUrl: '/Abacha.png',
     inStock: true,
     badge: 'New'
   },
@@ -349,7 +304,7 @@ export const products: Product[] = [
     weight: '250g',
     description: 'Sliced oil bean seed',
     image: 'ugba oil bean',
-    imageUrl: ugbaImage,
+    imageUrl: '/Ugba.png',
     inStock: true
   },
   {
@@ -360,7 +315,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'African breadfruit seeds',
     image: 'ukwa breadfruit',
-    imageUrl: ukwaImage,
+    imageUrl: '/Ukwa.png',
     inStock: true
   },
   {
@@ -371,11 +326,9 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Bambara nut flour',
     image: 'okpa bambara nut',
-    imageUrl: okpaImage,
+    imageUrl: '/Okpa.png',
     inStock: true
   },
-
-  // Meats & Protein
   {
     id: '22',
     name: 'Kilishi',
@@ -384,7 +337,7 @@ export const products: Product[] = [
     weight: '200g',
     description: 'Traditional Nigerian dried spiced meat',
     image: 'kilishi dried meat',
-    imageUrl: kilishiImage,
+    imageUrl: '/Kilishi.png',
     inStock: true,
     badge: 'Popular'
   },
@@ -396,7 +349,7 @@ export const products: Product[] = [
     weight: '12 pieces',
     description: 'Dried cow skin - unwashed',
     image: 'ponmo cow skin',
-    imageUrl: unwashedPonmoImage,
+    imageUrl: '/Unwashed Ponmo.png',
     inStock: true
   },
   {
@@ -407,7 +360,7 @@ export const products: Product[] = [
     weight: '10 pieces',
     description: 'Prewashed dried cow skin',
     image: 'ponmo prewashed',
-    imageUrl: ponmoImage,
+    imageUrl: '/Prewashed Dried Ponmo.png',
     inStock: true
   },
   {
@@ -418,7 +371,7 @@ export const products: Product[] = [
     weight: '10 pieces',
     description: 'Ready to cook soaked ponmo',
     image: 'ponmo soaked',
-    imageUrl: soakedPonmoImage,
+    imageUrl: '/Soaked Ponmo.png',
     inStock: true
   },
   {
@@ -429,7 +382,7 @@ export const products: Product[] = [
     weight: '1.2kg',
     description: 'Premium dried Nigerian goat meat',
     image: 'dried goat meat',
-    imageUrl: goatMeatImage,
+    imageUrl: '/Naija Dried Goat Meat.png',
     inStock: true,
     badge: 'Best Seller'
   },
@@ -441,7 +394,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Smoked catfish cutlet pieces',
     image: 'smoked catfish cutlet',
-    imageUrl: catfishCutletImage,
+    imageUrl: '/Catfish Cutlet.png',
     inStock: true
   },
   {
@@ -452,7 +405,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Whole smoked catfish',
     image: 'smoked catfish whole',
-    imageUrl: catfishWholeImage,
+    imageUrl: '/Catfish Whole.png',
     inStock: true
   },
   {
@@ -463,7 +416,7 @@ export const products: Product[] = [
     weight: '500g',
     description: 'Dried hake fish (panla)',
     image: 'panla kika fish',
-    imageUrl: panlakikaImage,
+    imageUrl: '/Panla Kika.png',
     inStock: true
   },
   {
@@ -474,7 +427,7 @@ export const products: Product[] = [
     weight: '350g',
     description: 'Premium quality dried crayfish for soups',
     image: 'ground crayfish',
-    imageUrl: crayfishImage,
+    imageUrl: '/Crayfish.png',
     inStock: true,
     badge: 'Popular',
     variants: [
@@ -490,7 +443,7 @@ export const products: Product[] = [
     weight: '650g',
     description: 'Premium quality Large pack of dried crayfish',
     image: 'crayfish large pack',
-    imageUrl: crayfishPaintImage,
+    imageUrl: '/Crayfish (Paint Plastic).png',
     inStock: true
   },
   {
@@ -499,9 +452,9 @@ export const products: Product[] = [
     category: 'Meats & Protein',
     price: 12.99,
     weight: '500g',
-    description: 'Premium quality dried prawns - naturally sun-dried to preserve authentic taste and seafood essence. Perfect for enhancing the flavor of soups, stews, and traditional Nigerian dishes. Rich in protein and adds depth to any recipe.',
+    description: 'Premium quality dried prawns',
     image: 'dried prawns seafood',
-    imageUrl: driedPrawnImage,
+    imageUrl: '/Dried Prawns.png',
     inStock: true,
     badge: 'New',
     variants: [
@@ -518,7 +471,7 @@ export const products: Product[] = [
     weight: '90g',
     description: 'Premium quality dried stockfish',
     image: 'dried stockfish',
-    imageUrl: stockfishImage,
+    imageUrl: '/Stockfish.png',
     inStock: true,
     badge: 'Popular'
   }
