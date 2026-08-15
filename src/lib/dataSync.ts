@@ -1,4 +1,5 @@
 import { Product } from '../app/data/products';
+import { supabase } from './supabase';
 
 // Keys used by the Kefas admin/inventory sync layer.
 const KEYS = {
@@ -13,7 +14,7 @@ const KEYS = {
 
 type KVKey = (typeof KEYS)[keyof typeof KEYS];
 
-async function getFromKV(key: KVKey): Promise<any | null> {
+async function getFromNeon(key: KVKey): Promise<any | null> {
   try {
     const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}`, {
       method: 'GET',
@@ -28,6 +29,41 @@ async function getFromKV(key: KVKey): Promise<any | null> {
     console.error(`❌ Failed to load Neon KV key ${key}:`, error);
     return null;
   }
+}
+
+async function getFromSupabaseForMigration(key: KVKey): Promise<any | null> {
+  try {
+    const { data, error } = await supabase
+      .from('kv_store_da50176a')
+      .select('value')
+      .eq('key', key)
+      .maybeSingle();
+
+    if (error || data?.value === undefined) return null;
+
+    return data.value;
+  } catch (error) {
+    console.error(`❌ Legacy Supabase migration read failed for ${key}:`, error);
+    return null;
+  }
+}
+
+async function getFromKV(key: KVKey): Promise<any | null> {
+  const neonValue = await getFromNeon(key);
+  if (neonValue !== null) return neonValue;
+
+  // One-time migration fallback: if Neon is empty, recover the existing value
+  // from Supabase and immediately copy it into Neon. Supabase is never written to.
+  const legacyValue = await getFromSupabaseForMigration(key);
+  if (legacyValue !== null) {
+    const migrated = await setInKV(key, legacyValue);
+    if (migrated) {
+      console.log(`✅ Migrated legacy Kefas key to Neon: ${key}`);
+    }
+    return legacyValue;
+  }
+
+  return null;
 }
 
 async function setInKV(key: KVKey, value: any): Promise<boolean> {
@@ -52,7 +88,7 @@ async function setInKV(key: KVKey, value: any): Promise<boolean> {
 
 export async function syncFromNeon(): Promise<void> {
   try {
-    console.log('📥 Downloading Kefas data from Neon...');
+    console.log('📥 Downloading Kefas data from Neon (with legacy migration fallback)...');
 
     const [
       stockStatus,
@@ -90,9 +126,9 @@ export async function syncFromNeon(): Promise<void> {
       customProducts,
     ].filter((value) => value !== null).length;
 
-    console.log(`✅ Downloaded ${syncedCount} items from Neon`);
+    console.log(`✅ Downloaded ${syncedCount} items from Neon/legacy migration`);
   } catch (error) {
-    console.error('❌ Failed to download from Neon:', error);
+    console.error('❌ Failed to download Kefas data:', error);
   }
 }
 
