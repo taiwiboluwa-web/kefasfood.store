@@ -17,8 +17,12 @@ function json(data: unknown, status = 200) {
 }
 
 export default async function handler(req: Request) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return json({ error: 'BLOB_READ_WRITE_TOKEN is not configured' }, 500);
+  // The Kefas Blob store uses a custom environment-variable prefix.
+  // Never expose this token to the browser.
+  const blobToken = process.env.KEFAS_READ_WRITE_TOKEN;
+
+  if (!blobToken) {
+    return json({ error: 'KEFAS_READ_WRITE_TOKEN is not configured' }, 500);
   }
 
   try {
@@ -39,6 +43,7 @@ export default async function handler(req: Request) {
         access: 'public',
         addRandomSuffix: true,
         contentType: file.type,
+        token: blobToken,
       });
 
       return json({ url: blob.url, pathname: blob.pathname }, 201);
@@ -52,7 +57,7 @@ export default async function handler(req: Request) {
         return json({ error: 'Invalid Blob URL' }, 400);
       }
 
-      await del(url);
+      await del(url, { token: blobToken });
       return json({ ok: true });
     }
 
