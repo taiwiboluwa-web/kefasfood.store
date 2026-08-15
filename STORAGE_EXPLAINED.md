@@ -1,101 +1,60 @@
-# Storage System Explained
+# Kefas Food Storage System
 
-## Your Request: 100GB Storage with 10MB Max Per Image
+## Current storage architecture
 
-### What's Possible:
+Kefas Food now uses:
 
-✅ **10MB max per image** - DONE! Individual files limited to 10MB
-✅ **Unlimited total storage** - Use Supabase Storage (effectively unlimited)
+- **Neon PostgreSQL** for persistent admin/inventory data.
+- **Vercel Blob** for product images.
+- **Browser localStorage** only as a small emergency fallback for images up to 2MB.
 
-### Browser localStorage Limitation:
+## Product images
 
-❌ **100GB localStorage is NOT possible**
-- Browser localStorage has a hard limit of ~5-10MB TOTAL (not per image)
-- This limit is set by the browser (Chrome, Firefox, Safari) and cannot be changed
-- It's designed for small data like settings, not large images
+The admin upload flow sends product images to `/api/blob` on the deployed Vercel site. The Blob read/write token stays server-side and is never exposed to the browser.
 
-## Your Storage Options:
+Current server upload limit:
 
-### Option 1: Supabase Storage (Recommended) ⭐
-- ✅ **Unlimited storage** (100GB+)
-- ✅ **10MB max per file** (as requested)
-- ✅ **Free tier: 1GB storage** (upgrade for more)
-- ✅ **Permanent, reliable URLs**
-- ✅ **Works on published sites**
-- ⚙️ Requires one-time setup (see SUPABASE_STORAGE_FIX.md)
+- Maximum image size: **4MB**
+- Supported formats: JPEG, PNG, WebP, GIF, AVIF
+- Blob access: **Public**, because product images are public storefront assets.
 
-**To enable:**
-1. Click "Test Storage" button in admin panel
-2. Follow the instructions in console
-3. Or see SUPABASE_STORAGE_FIX.md
+Vercel Blob provides globally served object storage and immutable URLs suitable for product images. The application uses the custom environment variable `KEFAS_READ_WRITE_TOKEN` because the Blob store was connected with the `KEFAS` prefix.
 
-### Option 2: External Image Hosting (No Limits!)
-- ✅ **Unlimited images**
-- ✅ **Free forever**
-- ✅ **No setup required**
-- ✅ **Just paste URLs**
+## Persistent admin data
 
-**Services:**
-- [Imgur](https://imgur.com) - Unlimited free image hosting
-- [ImgBB](https://imgbb.com) - Unlimited free image hosting
-- Your own server/CDN
+The following application state is stored in the Neon `kv_store_da50176a` table through `/api/kv`:
 
-### Option 3: localStorage (Limited Fallback)
-- ⚠️ **~5-10MB total** (browser limit, not changeable)
-- ✅ **Automatic fallback** for small images
-- ✅ **Works offline**
-- ❌ **Not suitable for many/large images**
+- `kefas_stock_status`
+- `kefas_product_prices`
+- `kefas_variant_prices`
+- `kefas_all_products`
+- `kefas_coming_soon_enabled`
+- `kefas_coming_soon_products`
+- `kefas_custom_products`
 
-## Current System Behavior:
+The browser keeps a local copy for fast UI updates, while changes are persisted to Neon.
 
-### When you upload an image:
+## Fallback behavior
 
-1. **Try Supabase Storage first** (unlimited)
-   - If successful → Image stored permanently ✅
-   - If fails → Try fallback
+If Blob upload fails, the existing localStorage fallback can temporarily keep small images (up to 2MB) in the current browser. This is only a safety net; it is not shared storage and should not be relied on for production images.
 
-2. **Fallback to localStorage** (only for images ≤2MB)
-   - If space available → Store locally ✅
-   - If full → Show error
+## Required Vercel environment variables
 
-3. **Manual option: Image URL**
-   - Always works
-   - Upload to Imgur/ImgBB
-   - Paste URL
+```text
+DATABASE_URL
+KEFAS_READ_WRITE_TOKEN
+```
 
-## Recommendations:
+The Blob connection also creates its store ID and webhook public-key variables. Those values are managed by Vercel and do not need to be exposed in frontend code.
 
-### For Your Use Case (Many Products):
+## Result
 
-**Best Setup:**
-1. ✅ Enable Supabase Storage (one-time 5-minute setup)
-2. ✅ Upload directly to get unlimited storage
-3. ✅ All images work perfectly on published site
+```text
+Kefas Food
+├── Vercel        → hosting
+├── Neon          → database
+├── Vercel Blob   → product images
+└── Stripe        → payments
+```
 
-**Alternative (No Setup):**
-1. ✅ Upload images to Imgur.com
-2. ✅ Copy image URL
-3. ✅ Paste into "📎 Image URL" tab
-4. ✅ Unlimited images, zero setup
-
-## Technical Details:
-
-| Storage Type | Max Per File | Total Capacity | Setup Required | Works Published |
-|--------------|--------------|----------------|----------------|-----------------|
-| **Supabase** | 10MB | Unlimited (1GB+ free) | Yes (5 min) | ✅ Yes |
-| **Imgur/ImgBB** | 20MB+ | Unlimited | No | ✅ Yes |
-| **localStorage** | N/A | 5-10MB TOTAL | No | ✅ Yes |
-
-## Summary:
-
-You asked for 100GB with 10MB max per file. Here's what I've set up:
-
-✅ **10MB max per file** - Enforced
-✅ **Unlimited storage via Supabase** - Available (needs setup)
-✅ **Unlimited storage via Imgur/ImgBB** - Always works (no setup)
-❌ **100GB localStorage** - Impossible (browser limitation)
-
-**Action Required:**
-Choose one of these options for unlimited storage:
-1. Setup Supabase Storage (see SUPABASE_STORAGE_FIX.md) - Best option
-2. Use Imgur/ImgBB image URLs - Easiest option
+Supabase is no longer part of the application's runtime storage architecture.
