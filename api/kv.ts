@@ -26,6 +26,17 @@ function isAllowedKey(key: unknown): key is string {
   return typeof key === 'string' && ALLOWED_KEYS.has(key);
 }
 
+function isSameOrigin(req: Request): boolean {
+  const origin = req.headers.get('origin');
+  if (!origin) return false;
+
+  try {
+    return new URL(origin).origin === new URL(req.url).origin;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req: Request) {
   if (!process.env.DATABASE_URL) {
     return json({ error: 'DATABASE_URL is not configured' }, 500);
@@ -33,6 +44,12 @@ export default async function handler(req: Request) {
 
   if (req.method !== 'GET' && req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405);
+  }
+
+  // Writes must originate from the deployed Kefas site. This reduces cross-site
+  // abuse while keeping the public read path available for storefront settings.
+  if (req.method === 'POST' && !isSameOrigin(req)) {
+    return json({ error: 'Forbidden' }, 403);
   }
 
   // This endpoint is intentionally limited to the application's known KV keys.
