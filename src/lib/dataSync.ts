@@ -116,4 +116,9 @@ export const customProductsSync = {
   async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
 
+// Legacy names kept temporarily so older components still compile.
+// These are aliases to Neon only; no Supabase request is made.
+export const syncFromSupabase = syncFromNeon
+export const syncToSupabase = syncToNeon
+
 export { KEYS }
