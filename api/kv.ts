@@ -20,19 +20,35 @@ function sendJson(res: any, data: unknown, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+function getHeader(req: any, name: string): string | undefined {
+  const headers = req?.headers;
+  if (!headers) return undefined;
+
+  if (typeof headers.get === 'function') {
+    const value = headers.get(name);
+    return value == null ? undefined : String(value);
+  }
+
+  const direct = headers[name] ?? headers[name.toLowerCase()];
+  if (Array.isArray(direct)) return direct[0] ? String(direct[0]) : undefined;
+  return direct == null ? undefined : String(direct);
+}
+
 function isAllowedKey(key: unknown): key is string {
   return typeof key === 'string' && ALLOWED_KEYS.has(key);
 }
 
 function getRequestUrl(req: any): URL {
-  const protocol = req.headers?.['x-forwarded-proto'] || 'https';
-  const host = req.headers?.['x-forwarded-host'] || req.headers?.host;
+  const protocol = getHeader(req, 'x-forwarded-proto') || 'https';
+  const host = getHeader(req, 'x-forwarded-host') || getHeader(req, 'host');
   if (!host) throw new Error('Unable to determine request host');
-  return new URL(req.url || '/', `${protocol}://${host}`);
+
+  const requestPath = typeof req.url === 'string' && req.url.length > 0 ? req.url : '/';
+  return new URL(requestPath, `${protocol}://${host}`);
 }
 
 function isSameOrigin(req: any): boolean {
-  const origin = req.headers?.origin;
+  const origin = getHeader(req, 'origin');
   if (!origin) return true;
 
   try {
@@ -149,7 +165,7 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, { value: rows[0]?.value ?? null });
     }
 
-    const contentLength = Number(req.headers?.['content-length'] || 0);
+    const contentLength = Number(getHeader(req, 'content-length') || 0);
     if (contentLength > MAX_BODY_BYTES) {
       return sendJson(res, { error: 'Request body too large' }, 413);
     }
