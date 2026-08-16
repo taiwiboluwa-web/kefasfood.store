@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import { products as staticProducts } from '../src/app/data/products';
 
 const ALLOWED_KEYS = new Set([
   'kefas_stock_status',
@@ -48,6 +49,24 @@ function isSameOrigin(req: Request): boolean {
   }
 }
 
+function initialStock() {
+  return Object.fromEntries(staticProducts.map(product => [product.id, product.inStock !== false]));
+}
+
+function initialPrices() {
+  return Object.fromEntries(staticProducts.map(product => [product.id, product.price]));
+}
+
+function initialVariantPrices() {
+  const result: Record<string, Record<string, number>> = {};
+  staticProducts.forEach(product => {
+    if (product.variants?.length) {
+      result[product.id] = Object.fromEntries(product.variants.map(variant => [variant.weight, variant.price]));
+    }
+  });
+  return result;
+}
+
 export default async function handler(req: Request) {
   if (!process.env.DATABASE_URL) {
     return json({ error: 'DATABASE_URL is not configured' }, 500);
@@ -79,6 +98,45 @@ export default async function handler(req: Request) {
         WHERE key = ${key}
         LIMIT 1
       `;
+
+      if (rows.length === 0 && key === 'kefas_all_products') {
+        await sql`
+          INSERT INTO kv_store_da50176a (key, value, updated_at)
+          VALUES ('kefas_all_products', ${JSON.stringify(staticProducts)}::jsonb, now())
+          ON CONFLICT (key) DO NOTHING
+        `;
+        return json({ value: staticProducts });
+      }
+
+      if (rows.length === 0 && key === 'kefas_stock_status') {
+        const value = initialStock();
+        await sql`
+          INSERT INTO kv_store_da50176a (key, value, updated_at)
+          VALUES ('kefas_stock_status', ${JSON.stringify(value)}::jsonb, now())
+          ON CONFLICT (key) DO NOTHING
+        `;
+        return json({ value });
+      }
+
+      if (rows.length === 0 && key === 'kefas_product_prices') {
+        const value = initialPrices();
+        await sql`
+          INSERT INTO kv_store_da50176a (key, value, updated_at)
+          VALUES ('kefas_product_prices', ${JSON.stringify(value)}::jsonb, now())
+          ON CONFLICT (key) DO NOTHING
+        `;
+        return json({ value });
+      }
+
+      if (rows.length === 0 && key === 'kefas_variant_prices') {
+        const value = initialVariantPrices();
+        await sql`
+          INSERT INTO kv_store_da50176a (key, value, updated_at)
+          VALUES ('kefas_variant_prices', ${JSON.stringify(value)}::jsonb, now())
+          ON CONFLICT (key) DO NOTHING
+        `;
+        return json({ value });
+      }
 
       return json({ value: rows[0]?.value ?? null });
     }
