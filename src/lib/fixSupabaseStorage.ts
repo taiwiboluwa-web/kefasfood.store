@@ -1,58 +1,44 @@
 /**
  * Legacy-named storage diagnostic shim.
  *
- * Product images now use Vercel Blob. This function keeps the existing
- * AdminVisits import working while performing a real Blob round-trip test.
- * It does not call Supabase.
+ * Product images now use Vercel Blob. Supabase is not used for product
+ * storage. This filename remains temporarily so older admin imports continue
+ * to work without reintroducing a Supabase dependency.
+ *
+ * The diagnostic performs a real server-side Vercel Blob round trip through
+ * /api/blob?diagnostic=1 and returns true only when the probe can be written
+ * and removed successfully.
  */
 export async function diagnoseStorageIssues(): Promise<boolean> {
   try {
-    const testFile = new File([new Uint8Array([0])], 'kefas-storage-diagnostic.png', {
-      type: 'image/png',
-    });
-
-    const form = new FormData();
-    form.append('file', testFile);
-    form.append('productId', '__storage_diagnostic__');
-
-    const uploadResponse = await fetch('/api/blob', {
+    const response = await fetch('/api/blob?diagnostic=1', {
       method: 'POST',
-      body: form,
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ diagnostic: true }),
       cache: 'no-store',
     });
 
-    let uploadData: any = null;
+    let data: any = null;
     try {
-      uploadData = await uploadResponse.json();
+      data = await response.json();
     } catch {
-      // Preserve the HTTP status for the diagnostic error below.
+      // Keep the HTTP status as the diagnostic signal.
     }
 
-    if (!uploadResponse.ok || typeof uploadData?.url !== 'string') {
-      const message = typeof uploadData?.error === 'string'
-        ? uploadData.error
-        : `Blob storage test upload failed with status ${uploadResponse.status}`;
-      console.error(`❌ Vercel Blob storage diagnostic failed: ${message}`);
-      return false;
-    }
-
-    // Clean up the diagnostic object so the test does not consume storage.
-    const deleteResponse = await fetch('/api/blob', {
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: uploadData.url }),
-      cache: 'no-store',
-    });
-
-    if (!deleteResponse.ok) {
-      console.warn('⚠️ Vercel Blob upload succeeded, but diagnostic cleanup failed.');
+    if (response.ok && data?.ok === true) {
+      console.info('✅ Vercel Blob storage diagnostic passed.');
       return true;
     }
 
-    console.log('✅ Vercel Blob storage diagnostic passed. Upload and cleanup succeeded.');
-    return true;
+    console.error(
+      '❌ Vercel Blob storage diagnostic failed:',
+      data?.error || `HTTP ${response.status}`
+    );
+    return false;
   } catch (error) {
-    console.error('❌ Vercel Blob storage diagnostic failed:', error);
+    console.error('❌ Vercel Blob storage diagnostic request failed:', error);
     return false;
   }
 }
