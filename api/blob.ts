@@ -88,7 +88,7 @@ function parseMultipart(body: Buffer, contentType: string): { file: Buffer; file
     const partStart = cursor + delimiter.length
     if (body.slice(partStart, partStart + 2).toString() === '--') break
 
-    const contentStart = partStart + 2 // skip CRLF after boundary
+    const contentStart = partStart + 2
     const headerEnd = body.indexOf(Buffer.from('\r\n\r\n'), contentStart)
     if (headerEnd === -1) break
 
@@ -150,6 +150,29 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (req.method === 'POST') {
+      const requestUrl = getRequestUrl(req)
+
+      // Lightweight server-side Blob health check. This deliberately avoids
+      // multipart parsing so the diagnostic tests the storage provider itself,
+      // not the product-image upload parser.
+      if (requestUrl.searchParams.get('diagnostic') === '1') {
+        const probePath = `diagnostics/kefas-blob-${Date.now()}.txt`
+        const probe = await put(probePath, 'Kefas Food Vercel Blob health check', {
+          access: 'public',
+          addRandomSuffix: true,
+          contentType: 'text/plain; charset=utf-8',
+          token,
+        })
+
+        try {
+          await del(probe.url, { token })
+        } catch (cleanupError) {
+          console.warn('Blob diagnostic cleanup failed:', cleanupError)
+        }
+
+        return sendJson(res, { ok: true, provider: 'vercel-blob' })
+      }
+
       const contentLength = Number(getHeader(req, 'content-length') || 0)
       if (contentLength > MAX_BODY_BYTES) {
         return sendJson(res, { error: 'Request body too large. Maximum image size is 4MB.' }, 413)
