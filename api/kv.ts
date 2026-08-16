@@ -13,33 +13,26 @@ const ALLOWED_KEYS = new Set([
 
 const MAX_BODY_BYTES = 512_000;
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-    },
-  });
+function sendJson(res: any, data: unknown, status = 200) {
+  res.statusCode = status;
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  res.end(JSON.stringify(data));
 }
 
 function isAllowedKey(key: unknown): key is string {
   return typeof key === 'string' && ALLOWED_KEYS.has(key);
 }
 
-function getRequestUrl(req: Request): URL {
-  try {
-    return new URL(req.url);
-  } catch {
-    const proto = req.headers.get('x-forwarded-proto') || 'https';
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
-    if (!host) throw new Error('Unable to determine request host');
-    return new URL(req.url, `${proto}://${host}`);
-  }
+function getRequestUrl(req: any): URL {
+  const protocol = req.headers?.['x-forwarded-proto'] || 'https';
+  const host = req.headers?.['x-forwarded-host'] || req.headers?.host;
+  if (!host) throw new Error('Unable to determine request host');
+  return new URL(req.url || '/', `${protocol}://${host}`);
 }
 
-function isSameOrigin(req: Request): boolean {
-  const origin = req.headers.get('origin');
+function isSameOrigin(req: any): boolean {
+  const origin = req.headers?.origin;
   if (!origin) return true;
 
   try {
@@ -67,17 +60,34 @@ function initialVariantPrices() {
   return result;
 }
 
-export default async function handler(req: Request) {
+async function readBody(req: any): Promise<any> {
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'object') return req.body;
+    if (typeof req.body === 'string') return JSON.parse(req.body);
+  }
+
+  let body = '';
+  for await (const chunk of req) {
+    body += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    if (Buffer.byteLength(body, 'utf8') > MAX_BODY_BYTES) {
+      throw Object.assign(new Error('Request body too large'), { statusCode: 413 });
+    }
+  }
+  if (!body) return {};
+  return JSON.parse(body);
+}
+
+export default async function handler(req: any, res: any) {
   if (!process.env.DATABASE_URL) {
-    return json({ error: 'DATABASE_URL is not configured' }, 500);
+    return sendJson(res, { error: 'DATABASE_URL is not configured' }, 500);
   }
 
   if (req.method !== 'GET' && req.method !== 'POST') {
-    return json({ error: 'Method not allowed' }, 405);
+    return sendJson(res, { error: 'Method not allowed' }, 405);
   }
 
   if (req.method === 'POST' && !isSameOrigin(req)) {
-    return json({ error: 'Forbidden' }, 403);
+    return sendJson(res, { error: 'Forbidden' }, 403);
   }
 
   const sql = neon(process.env.DATABASE_URL);
@@ -87,7 +97,7 @@ export default async function handler(req: Request) {
       const key = getRequestUrl(req).searchParams.get('key');
 
       if (!isAllowedKey(key)) {
-        return json({ error: 'Invalid key' }, 400);
+        return sendJson(res, { error: 'Invalid key' }, 400);
       }
 
       const rows = await sql`
@@ -103,7 +113,7 @@ export default async function handler(req: Request) {
           VALUES ('kefas_all_products', ${JSON.stringify(staticProducts)}::jsonb, now())
           ON CONFLICT (key) DO NOTHING
         `;
-        return json({ value: staticProducts });
+        return sendJson(res, { value: staticProducts });
       }
 
       if (rows.length === 0 && key === 'kefas_stock_status') {
@@ -113,7 +123,7 @@ export default async function handler(req: Request) {
           VALUES ('kefas_stock_status', ${JSON.stringify(value)}::jsonb, now())
           ON CONFLICT (key) DO NOTHING
         `;
-        return json({ value });
+        return sendJson(res, { value });
       }
 
       if (rows.length === 0 && key === 'kefas_product_prices') {
@@ -123,7 +133,7 @@ export default async function handler(req: Request) {
           VALUES ('kefas_product_prices', ${JSON.stringify(value)}::jsonb, now())
           ON CONFLICT (key) DO NOTHING
         `;
-        return json({ value });
+        return sendJson(res, { value });
       }
 
       if (rows.length === 0 && key === 'kefas_variant_prices') {
@@ -133,45 +143,46 @@ export default async function handler(req: Request) {
           VALUES ('kefas_variant_prices', ${JSON.stringify(value)}::jsonb, now())
           ON CONFLICT (key) DO NOTHING
         `;
-        return json({ value });
+        return sendJson(res, { value });
       }
 
-      return json({ value: rows[0]?.value ?? null });
+      return sendJson(res, { value: rows[0]?.value ?? null });
     }
 
-    const contentLength = Number(req.headers.get('content-length') || 0);
+    const contentLength = Number(req.headers?.['content-length'] || 0);
     if (contentLength > MAX_BODY_BYTES) {
-      return json({ error: 'Request body too large' }, 413);
-    }
-
-    const body = await req.text();
-    if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) {
-      return json({ error: 'Request body too large' }, 413);
+      return sendJson(res, { error: 'Request body too large' }, 413);
     }
 
     let payload: { key?: unknown; value?: unknown };
     try {
-      payload = JSON.parse(body);
-    } catch {
-      return json({ error: 'Invalid JSON' }, 400);
+      payload = await readBody(req);
+    } catch (error: any) {
+      if (error?.statusCode === 413) return sendJson(res, { error: 'Request body too large' }, 413);
+      return sendJson(res, { error: 'Invalid JSON' }, 400);
     }
 
-    if (!isAllowedKey(payload.key)) {
-      return json({ error: 'Invalid key' }, 400);
+    if (!isAllowedKey(payload?.key)) {
+      return sendJson(res, { error: 'Invalid key' }, 400);
+    }
+
+    const serializedValue = JSON.stringify(payload.value);
+    if (Buffer.byteLength(serializedValue, 'utf8') > MAX_BODY_BYTES) {
+      return sendJson(res, { error: 'Request body too large' }, 413);
     }
 
     await sql`
       INSERT INTO kv_store_da50176a (key, value, updated_at)
-      VALUES (${payload.key}, ${JSON.stringify(payload.value)}::jsonb, now())
+      VALUES (${payload.key}, ${serializedValue}::jsonb, now())
       ON CONFLICT (key)
       DO UPDATE SET
         value = EXCLUDED.value,
         updated_at = now()
     `;
 
-    return json({ ok: true });
-  } catch (error) {
+    return sendJson(res, { ok: true });
+  } catch (error: any) {
     console.error('Neon KV API error:', error);
-    return json({ error: 'Database operation failed' }, 500);
+    return sendJson(res, { error: 'Database operation failed' }, error?.statusCode || 500);
   }
 }
