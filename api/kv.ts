@@ -26,12 +26,23 @@ function isAllowedKey(key: unknown): key is string {
   return typeof key === 'string' && ALLOWED_KEYS.has(key);
 }
 
+function getRequestUrl(req: Request): URL {
+  try {
+    return new URL(req.url);
+  } catch {
+    const proto = req.headers.get('x-forwarded-proto') || 'https';
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+    if (!host) throw new Error('Unable to determine request host');
+    return new URL(req.url, `${proto}://${host}`);
+  }
+}
+
 function isSameOrigin(req: Request): boolean {
   const origin = req.headers.get('origin');
-  if (!origin) return false;
+  if (!origin) return true;
 
   try {
-    return new URL(origin).origin === new URL(req.url).origin;
+    return new URL(origin).origin === getRequestUrl(req).origin;
   } catch {
     return false;
   }
@@ -52,13 +63,11 @@ export default async function handler(req: Request) {
     return json({ error: 'Forbidden' }, 403);
   }
 
-  // This endpoint is intentionally limited to the application's known KV keys.
-  // It never accepts arbitrary SQL or table names from the browser.
   const sql = neon(process.env.DATABASE_URL);
 
   try {
     if (req.method === 'GET') {
-      const key = new URL(req.url).searchParams.get('key');
+      const key = getRequestUrl(req).searchParams.get('key');
 
       if (!isAllowedKey(key)) {
         return json({ error: 'Invalid key' }, 400);
