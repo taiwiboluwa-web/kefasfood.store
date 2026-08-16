@@ -208,8 +208,12 @@ export const customProductsSync = {
   },
 }
 
-// Backward-compatible names for older admin imports. These now point only to Neon.
-export const syncFromSupabase = syncFromNeon
+// Backward-compatible names for older admin imports. Public-page callers should not block on Neon.
+// Keep the sync available in the background so the static/local cache renders immediately.
+export const syncFromSupabase = (): Promise<void> => {
+  void syncFromNeon()
+  return Promise.resolve()
+}
 export const syncToSupabase = syncToNeon
 export const syncAllToSupabase = syncAllToNeon
 
