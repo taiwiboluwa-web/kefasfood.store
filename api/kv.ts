@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { products as staticProducts } from '../src/app/data/products';
+import { products as staticProducts } from '../src/app/data/products.js';
 
 const ALLOWED_KEYS = new Set([
   'kefas_stock_status',
@@ -76,8 +76,6 @@ export default async function handler(req: Request) {
     return json({ error: 'Method not allowed' }, 405);
   }
 
-  // Writes must originate from the deployed Kefas site. This reduces cross-site
-  // abuse while keeping the public read path available for storefront settings.
   if (req.method === 'POST' && !isSameOrigin(req)) {
     return json({ error: 'Forbidden' }, 403);
   }
