@@ -15,17 +15,12 @@ type KVKey = (typeof KEYS)[keyof typeof KEYS]
 
 async function getFromKV(key: KVKey): Promise<any | null> {
   try {
-    const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}`, {
-      method: 'GET',
-      cache: 'no-store',
-    })
-
+    const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}`, { method: 'GET', cache: 'no-store' })
     if (!response.ok) return null
-
     const data = await response.json()
     return data?.value ?? null
   } catch (error) {
-    console.error(`❌ Failed to load Neon KV key ${key}:`, error)
+    console.error(`Failed to load Neon KV key ${key}:`, error)
     return null
   }
 }
@@ -37,60 +32,35 @@ async function setInKV(key: KVKey, value: unknown): Promise<boolean> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ key, value }),
     })
-
     if (!response.ok) {
-      console.error(`❌ Failed to save Neon KV key ${key}:`, await response.text())
+      console.error(`Failed to save Neon KV key ${key}:`, await response.text())
       return false
     }
-
     return true
   } catch (error) {
-    console.error(`❌ Failed to save Neon KV key ${key}:`, error)
+    console.error(`Failed to save Neon KV key ${key}:`, error)
     return false
   }
 }
 
 export async function syncFromNeon(): Promise<void> {
-  try {
-    console.log('📥 Downloading Kefas data from Neon...')
-
-    const [
-      stockStatus,
-      productPrices,
-      variantPrices,
-      allProducts,
-      comingSoonEnabled,
-      comingSoonProducts,
-      customProducts,
-    ] = await Promise.all([
-      getFromKV(KEYS.STOCK_STATUS),
-      getFromKV(KEYS.PRODUCT_PRICES),
-      getFromKV(KEYS.VARIANT_PRICES),
-      getFromKV(KEYS.ALL_PRODUCTS),
-      getFromKV(KEYS.COMING_SOON_ENABLED),
-      getFromKV(KEYS.COMING_SOON_PRODUCTS),
-      getFromKV(KEYS.CUSTOM_PRODUCTS),
-    ])
-
-    const values: Array<[KVKey, any | null]> = [
-      [KEYS.STOCK_STATUS, stockStatus],
-      [KEYS.PRODUCT_PRICES, productPrices],
-      [KEYS.VARIANT_PRICES, variantPrices],
-      [KEYS.ALL_PRODUCTS, allProducts],
-      [KEYS.COMING_SOON_ENABLED, comingSoonEnabled],
-      [KEYS.COMING_SOON_PRODUCTS, comingSoonProducts],
-      [KEYS.CUSTOM_PRODUCTS, customProducts],
-    ]
-
-    for (const [key, value] of values) {
-      if (value !== null) localStorage.setItem(key, JSON.stringify(value))
-    }
-
-    const syncedCount = values.filter(([, value]) => value !== null).length
-    console.log(`✅ Downloaded ${syncedCount} items from Neon`)
-  } catch (error) {
-    console.error('❌ Failed to download Kefas data:', error)
-  }
+  const values = await Promise.all([
+    getFromKV(KEYS.STOCK_STATUS),
+    getFromKV(KEYS.PRODUCT_PRICES),
+    getFromKV(KEYS.VARIANT_PRICES),
+    getFromKV(KEYS.ALL_PRODUCTS),
+    getFromKV(KEYS.COMING_SOON_ENABLED),
+    getFromKV(KEYS.COMING_SOON_PRODUCTS),
+    getFromKV(KEYS.CUSTOM_PRODUCTS),
+  ])
+  const keys: KVKey[] = [
+    KEYS.STOCK_STATUS, KEYS.PRODUCT_PRICES, KEYS.VARIANT_PRICES,
+    KEYS.ALL_PRODUCTS, KEYS.COMING_SOON_ENABLED, KEYS.COMING_SOON_PRODUCTS,
+    KEYS.CUSTOM_PRODUCTS,
+  ]
+  values.forEach((value, i) => {
+    if (value !== null) localStorage.setItem(keys[i], JSON.stringify(value))
+  })
 }
 
 export async function syncToNeon(key: KVKey, value: unknown): Promise<boolean> {
@@ -98,123 +68,52 @@ export async function syncToNeon(key: KVKey, value: unknown): Promise<boolean> {
 }
 
 export async function syncAllToNeon(): Promise<void> {
-  const entries: Array<[KVKey, string | null]> = [
-    [KEYS.STOCK_STATUS, localStorage.getItem(KEYS.STOCK_STATUS)],
-    [KEYS.PRODUCT_PRICES, localStorage.getItem(KEYS.PRODUCT_PRICES)],
-    [KEYS.VARIANT_PRICES, localStorage.getItem(KEYS.VARIANT_PRICES)],
-    [KEYS.ALL_PRODUCTS, localStorage.getItem(KEYS.ALL_PRODUCTS)],
-    [KEYS.COMING_SOON_ENABLED, localStorage.getItem(KEYS.COMING_SOON_ENABLED)],
-    [KEYS.COMING_SOON_PRODUCTS, localStorage.getItem(KEYS.COMING_SOON_PRODUCTS)],
-    [KEYS.CUSTOM_PRODUCTS, localStorage.getItem(KEYS.CUSTOM_PRODUCTS)],
-  ]
-
-  const updates = entries
-    .filter(([, rawValue]) => rawValue !== null)
-    .map(async ([key, rawValue]) => {
-      try {
-        return await setInKV(key, JSON.parse(rawValue as string))
-      } catch {
-        return false
-      }
-    })
-
+  const entries = (Object.values(KEYS) as KVKey[]).map(key => [key, localStorage.getItem(key)] as const)
+  const updates = entries.filter(([, value]) => value !== null).map(([key, value]) => setInKV(key, JSON.parse(value!)))
   const results = await Promise.all(updates)
   const successCount = results.filter(Boolean).length
-
-  console.log(`✅ Synced ${successCount}/${updates.length} items to Neon`)
-
-  if (updates.length > 0 && successCount === 0) {
-    throw new Error('No items were synced to Neon')
-  }
+  if (updates.length > 0 && successCount === 0) throw new Error('No items were synced to Neon')
 }
 
 export const stockStatusSync = {
-  async save(stockStatus: Record<string, boolean>): Promise<boolean> {
-    localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(stockStatus))
-    return syncToNeon(KEYS.STOCK_STATUS, stockStatus)
-  },
-  async load(): Promise<Record<string, boolean> | null> {
-    return getFromKV(KEYS.STOCK_STATUS)
-  },
+  async save(value: Record<string, boolean>) { localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(value)); return syncToNeon(KEYS.STOCK_STATUS, value) },
+  async load() { return getFromKV(KEYS.STOCK_STATUS) as Promise<Record<string, boolean> | null> },
 }
 
 export const productPricesSync = {
-  async save(
-    prices: Record<string, number>,
-    variantPrices: Record<string, Record<string, number>>,
-  ): Promise<boolean> {
+  async save(prices: Record<string, number>, variantPrices: Record<string, Record<string, number>>) {
     localStorage.setItem(KEYS.PRODUCT_PRICES, JSON.stringify(prices))
     localStorage.setItem(KEYS.VARIANT_PRICES, JSON.stringify(variantPrices))
-
-    const [success1, success2] = await Promise.all([
-      syncToNeon(KEYS.PRODUCT_PRICES, prices),
-      syncToNeon(KEYS.VARIANT_PRICES, variantPrices),
-    ])
-
-    return success1 && success2
+    const [a, b] = await Promise.all([syncToNeon(KEYS.PRODUCT_PRICES, prices), syncToNeon(KEYS.VARIANT_PRICES, variantPrices)])
+    return a && b
   },
-  async load(): Promise<{
-    productPrices: Record<string, number> | null
-    variantPrices: Record<string, Record<string, number>> | null
-  }> {
-    const [productPrices, variantPrices] = await Promise.all([
-      getFromKV(KEYS.PRODUCT_PRICES),
-      getFromKV(KEYS.VARIANT_PRICES),
-    ])
-
+  async load() {
+    const [productPrices, variantPrices] = await Promise.all([getFromKV(KEYS.PRODUCT_PRICES), getFromKV(KEYS.VARIANT_PRICES)])
     return { productPrices, variantPrices }
   },
 }
 
 export const comingSoonSync = {
-  async save(enabled: boolean, products: string[]): Promise<boolean> {
+  async save(enabled: boolean, products: string[]) {
     localStorage.setItem(KEYS.COMING_SOON_ENABLED, JSON.stringify(enabled))
     localStorage.setItem(KEYS.COMING_SOON_PRODUCTS, JSON.stringify(products))
-
-    const [success1, success2] = await Promise.all([
-      syncToNeon(KEYS.COMING_SOON_ENABLED, enabled),
-      syncToNeon(KEYS.COMING_SOON_PRODUCTS, products),
-    ])
-
-    return success1 && success2
+    const [a, b] = await Promise.all([syncToNeon(KEYS.COMING_SOON_ENABLED, enabled), syncToNeon(KEYS.COMING_SOON_PRODUCTS, products)])
+    return a && b
   },
-  async load(): Promise<{ enabled: boolean | null; products: string[] | null }> {
-    const [enabled, products] = await Promise.all([
-      getFromKV(KEYS.COMING_SOON_ENABLED),
-      getFromKV(KEYS.COMING_SOON_PRODUCTS),
-    ])
-
+  async load() {
+    const [enabled, products] = await Promise.all([getFromKV(KEYS.COMING_SOON_ENABLED), getFromKV(KEYS.COMING_SOON_PRODUCTS)])
     return { enabled, products }
   },
 }
 
 export const productsSync = {
-  async save(products: Product[]): Promise<boolean> {
-    localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(products))
-    return syncToNeon(KEYS.ALL_PRODUCTS, products)
-  },
-  async load(): Promise<Product[] | null> {
-    return getFromKV(KEYS.ALL_PRODUCTS)
-  },
+  async save(products: Product[]) { localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(products)); return syncToNeon(KEYS.ALL_PRODUCTS, products) },
+  async load() { return getFromKV(KEYS.ALL_PRODUCTS) as Promise<Product[] | null> },
 }
 
 export const customProductsSync = {
-  async save(products: Product[]): Promise<boolean> {
-    localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(products))
-    return syncToNeon(KEYS.CUSTOM_PRODUCTS, products)
-  },
-  async load(): Promise<Product[] | null> {
-    return getFromKV(KEYS.CUSTOM_PRODUCTS)
-  },
+  async save(products: Product[]) { localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(products)); return syncToNeon(KEYS.CUSTOM_PRODUCTS, products) },
+  async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
-
-// Backward-compatible names for older admin imports. Public-page callers should not block on Neon.
-// Keep the sync available in the background so the static/local cache renders immediately.
-export const syncFromSupabase = (): Promise<void> => {
-  void syncFromNeon()
-  return Promise.resolve()
-}
-export const syncToSupabase = syncToNeon
-export const syncAllToSupabase = syncAllToNeon
 
 export { KEYS }
