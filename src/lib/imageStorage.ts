@@ -1,19 +1,20 @@
-import { storeImageLocally } from './imageStorageFallback';
-
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const LOCAL_STORAGE_FALLBACK_SIZE = 2 * 1024 * 1024;
 
 /**
  * Upload a product image through the Vercel Blob server endpoint.
  * The Blob token stays server-side and is never exposed to the browser.
+ *
+ * Production products must always use a permanent cloud URL. We intentionally
+ * do not fall back to localStorage because browser storage is not durable,
+ * cannot be shared between devices, and is not suitable for production data.
  */
 export async function uploadProductImage(file: File, productId: string): Promise<string | null> {
-  try {
-    if (file.size > MAX_FILE_SIZE) {
-      console.error('❌ File too large. Maximum size is 10MB per image.');
-      return null;
-    }
+  if (file.size > MAX_FILE_SIZE) {
+    console.error('❌ File too large. Maximum size is 10MB per image.');
+    return null;
+  }
 
+  try {
     const form = new FormData();
     form.append('file', file);
     form.append('productId', productId);
@@ -23,34 +24,27 @@ export async function uploadProductImage(file: File, productId: string): Promise
       body: form,
     });
 
-    if (response.ok) {
-      const data = await response.json();
-      if (typeof data?.url === 'string') {
-        console.log(`✅ Image uploaded to Vercel Blob: ${data.url}`);
-        return data.url;
-      }
+    let data: any = null;
+    try {
+      data = await response.json();
+    } catch {
+      // Keep the original response status for the error below.
     }
 
-    console.error('❌ Vercel Blob upload failed:', await response.text());
+    if (response.ok && typeof data?.url === 'string' && data.url.length > 0) {
+      console.log(`✅ Image uploaded to Vercel Blob: ${data.url}`);
+      return data.url;
+    }
+
+    const message = typeof data?.error === 'string'
+      ? data.error
+      : `Upload failed with status ${response.status}`;
+    console.error(`❌ Vercel Blob upload failed: ${message}`);
+    return null;
   } catch (error) {
     console.error('❌ Unexpected Vercel Blob upload error:', error);
+    return null;
   }
-
-  // Keep the existing small-image local fallback so the admin UI remains usable
-  // while Blob is being configured in Vercel.
-  if (file.size <= LOCAL_STORAGE_FALLBACK_SIZE) {
-    try {
-      const localUrl = await storeImageLocally(file, productId);
-      if (localUrl) {
-        console.warn('⚠️ Using localStorage image fallback.');
-        return localUrl;
-      }
-    } catch (error) {
-      console.error('❌ Local image fallback failed:', error);
-    }
-  }
-
-  return null;
 }
 
 /** Delete a product image previously stored in Vercel Blob. */
@@ -80,7 +74,7 @@ export async function deleteProductImage(imageUrl: string): Promise<boolean> {
   }
 }
 
-/** Convert a File to base64 (for preview only, not storage). */
+/** Convert a File to base64 for an in-memory UI preview only. */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
