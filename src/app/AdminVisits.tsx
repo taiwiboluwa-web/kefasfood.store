@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import { products as staticProducts, Product, categories } from './data/products';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
-import { syncFromSupabase, stockStatusSync, productPricesSync, comingSoonSync, productsSync, syncAllToSupabase } from '../lib/dataSync';
+import { syncFromNeon, stockStatusSync, productPricesSync, comingSoonSync, productsSync, syncAllToNeon } from '../lib/dataSync';
 import { uploadProductImage, deleteProductImage, fileToBase64 } from '../lib/imageStorage';
 import { diagnoseStorageIssues } from '../lib/fixSupabaseStorage';
 import { clearOldCache } from './version';
@@ -229,8 +229,8 @@ export function AdminVisits() {
     const shouldLoad = typeof showLoading === 'boolean' ? showLoading : true;
     if (shouldLoad) setLoadingStock(true);
     try {
-      // Sync from Supabase first to get latest data across all accounts
-      await syncFromSupabase();
+      // Sync from Neon first to get latest data across all accounts
+      await syncFromNeon();
 
       // Load unified product list
       const storedProducts = localStorage.getItem('kefas_all_products');
@@ -334,7 +334,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await stockStatusSync.save(newStockStatus);
 
       // Dispatch a custom event so the storefront components can update in real-time
@@ -365,7 +365,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await productPricesSync.save(newPrices, variantPrices);
 
       // Dispatch custom event for storefront
@@ -418,7 +418,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await productPricesSync.save(newProductPrices, newVariantPrices);
 
       window.dispatchEvent(new CustomEvent('kefas_prices_updated', {
@@ -454,7 +454,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await productsSync.save(updatedProducts);
       
       // Also remove from stock status and prices
@@ -509,7 +509,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await productsSync.save(updatedProducts);
 
       window.dispatchEvent(new CustomEvent('kefas_products_updated', { detail: updatedProducts }));
@@ -529,7 +529,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_coming_soon_enabled', JSON.stringify(newEnabled));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await comingSoonSync.save(newEnabled, comingSoonProducts);
 
       window.dispatchEvent(new CustomEvent('kefas_coming_soon_updated', {
@@ -555,7 +555,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_coming_soon_products', JSON.stringify(updatedComingSoon));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await comingSoonSync.save(comingSoonEnabled, updatedComingSoon);
 
       window.dispatchEvent(new CustomEvent('kefas_coming_soon_updated', {
@@ -577,7 +577,7 @@ export function AdminVisits() {
     try {
       localStorage.setItem('kefas_coming_soon_products', JSON.stringify(updatedComingSoon));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await comingSoonSync.save(comingSoonEnabled, updatedComingSoon);
 
       window.dispatchEvent(new CustomEvent('kefas_coming_soon_updated', {
@@ -602,7 +602,7 @@ export function AdminVisits() {
       localStorage.setItem('kefas_coming_soon_products', JSON.stringify(defaultProducts));
       localStorage.setItem('kefas_coming_soon_enabled', JSON.stringify(false));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await comingSoonSync.save(false, defaultProducts);
 
       window.dispatchEvent(new CustomEvent('kefas_coming_soon_updated', {
@@ -618,22 +618,22 @@ export function AdminVisits() {
   const handleManualSync = async () => {
     setIsSyncing(true);
     try {
-      console.log('🔄 Starting manual sync to Supabase...');
+      console.log('🔄 Starting manual sync to Neon...');
       
-      // First sync TO Supabase (push all local data to cloud)
-      await syncAllToSupabase();
+      // First sync TO Neon (push all local data to cloud)
+      await syncAllToNeon();
       
-      // Then sync FROM Supabase (pull latest data from cloud)
-      await syncFromSupabase();
+      // Then sync FROM Neon (pull latest data from cloud)
+      await syncFromNeon();
       
       // Reload the stock data to reflect any changes
       await fetchStock(false);
       
       console.log('✅ Manual sync completed successfully');
-      toast.success('✅ Synced to Supabase successfully!');
+      toast.success('✅ Synced to Neon successfully!');
     } catch (err: any) {
       console.error('❌ Manual sync failed:', err);
-      toast.error('Failed to sync with Supabase');
+      toast.error('Failed to sync with Neon');
     } finally {
       setIsSyncing(false);
     }
@@ -791,7 +791,7 @@ export function AdminVisits() {
       localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
       localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
 
-      // Sync to Supabase for cross-account updates
+      // Sync to Neon for cross-account updates
       await Promise.all([
         productsSync.save(updatedProducts),
         stockStatusSync.save(newStockStatus),
@@ -912,7 +912,7 @@ export function AdminVisits() {
       localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
       localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
 
-      // Sync to Supabase
+      // Sync to Neon
       await Promise.all([
         productsSync.save(updatedProducts),
         stockStatusSync.save(newStockStatus),
@@ -1105,10 +1105,10 @@ export function AdminVisits() {
               onClick={handleManualSync}
               disabled={isSyncing}
               className="inline-flex items-center px-4 py-2 bg-[#1DB854] border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-[#199d47] focus:outline-none disabled:opacity-50 disabled:bg-[#1DB854]/70 transition-colors"
-              title="Sync all data to Supabase cloud database"
+              title="Sync all data to Neon cloud database"
             >
               <CloudUpload className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-pulse' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
+              {isSyncing ? 'Syncing...' : 'Sync to Neon'}
             </button>
 
             {/* Theme Toggle Button */}
