@@ -7,7 +7,7 @@ export function clearOldCache() {
   const currentVersion = localStorage.getItem('kefas_app_version');
 
   if (currentVersion !== APP_VERSION) {
-    console.log(`🔄 Updating from v${currentVersion || 'unknown'} to v${APP_VERSION}`);
+    console.log(`🔄 Updating from v${currentVersion || 'unknown'} to ${APP_VERSION}`);
 
     // IMPORTANT: Keep all product data and user data - only clear temporary cache
     const keysToKeep = [
@@ -17,6 +17,8 @@ export function clearOldCache() {
       'kefas_variant_prices',
       'kefas_all_products',
       'kefas_last_known_good_products',
+      'kefas_last_known_good_prices',
+      'kefas_last_known_good_variant_prices',
       'kefas_coming_soon_enabled',
       'kefas_coming_soon_products',
       'kefas_custom_products',
@@ -34,7 +36,5 @@ export function clearOldCache() {
 
     localStorage.setItem('kefas_app_version', APP_VERSION);
     console.log('✅ Cache updated to', APP_VERSION);
-
-    // Don't force reload - let the app continue normally
   }
 }
