@@ -142,21 +142,22 @@ export default async function handler(req: any, res: any) {
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
     `;
 
-    // Read the row back from Neon. The client must never receive success unless
-    // the database confirms the value that was requested was persisted.
+    // PostgreSQL jsonb normalizes object key order, so comparing JSON.stringify()
+    // output can falsely report a successful write as a mismatch. Compare the
+    // actual JSONB value in Neon instead; this validates semantic equality.
     const persisted = await sql`
       SELECT value, updated_at
       FROM kv_store_da50176a
       WHERE key = ${payload.key}
+        AND value = ${serializedValue}::jsonb
       LIMIT 1
     `;
-    const persistedValue = persisted[0]?.value;
-    if (JSON.stringify(persistedValue) !== serializedValue) {
+    if (persisted.length === 0) {
       console.error('Neon KV verification mismatch:', payload.key);
       return sendJson(res, { error: 'Neon write verification failed' }, 500);
     }
 
-    return sendJson(res, { ok: true, value: persistedValue, updatedAt: persisted[0]?.updated_at ?? null });
+    return sendJson(res, { ok: true, value: persisted[0].value, updatedAt: persisted[0].updated_at ?? null });
   } catch (error: any) {
     console.error('Neon KV API error:', error);
     return sendJson(res, { error: 'Database operation failed' }, error?.statusCode || 500);
