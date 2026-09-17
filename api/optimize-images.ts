@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless'
-import { del, put } from '@vercel/blob'
+import { put } from '@vercel/blob'
 import sharp from 'sharp'
 
 const TOKEN_ENV = 'KEFAS_READ_WRITE_TOKEN'
@@ -61,13 +61,11 @@ function blobPathname(url: string): string {
 }
 
 async function optimizeBuffer(input: Buffer) {
-  const optimized = await sharp(input, { failOn: 'none' })
+  return sharp(input, { failOn: 'none' })
     .rotate()
     .resize({ width: MAX_DIMENSION, height: MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
     .webp({ quality: WEBP_QUALITY, effort: 4 })
     .toBuffer()
-
-  return optimized
 }
 
 async function readCatalog(sql: any, key: string): Promise<Product[]> {
@@ -112,16 +110,17 @@ export default async function handler(req: any, res: any) {
 
     outer: for (const catalog of catalogs) {
       for (const product of catalog.products) {
-        if (!isBlobUrl(product.imageUrl) || seen.has(product.imageUrl)) {
+        const originalUrl = product.imageUrl
+        if (!isBlobUrl(originalUrl) || seen.has(originalUrl)) {
           skipped++
           continue
         }
-        seen.add(product.imageUrl)
+        seen.add(originalUrl)
         if (scanned >= MAX_IMAGES_PER_RUN) break outer
 
         scanned++
         try {
-          const response = await fetch(product.imageUrl, { cache: 'no-store' })
+          const response = await fetch(originalUrl, { cache: 'no-store' })
           if (!response.ok) throw new Error(`Blob download failed (${response.status})`)
           const source = Buffer.from(await response.arrayBuffer())
           const optimized = await optimizeBuffer(source)
@@ -134,7 +133,7 @@ export default async function handler(req: any, res: any) {
             continue
           }
 
-          const pathname = blobPathname(product.imageUrl)
+          const pathname = blobPathname(originalUrl)
           const blob = await put(pathname, optimized, {
             access: 'public',
             addRandomSuffix: false,
@@ -149,20 +148,18 @@ export default async function handler(req: any, res: any) {
           changes.push({
             key: catalog.key,
             productId: product.id,
-            oldUrl: product.imageUrl as string,
+            oldUrl: originalUrl,
             newUrl,
             before: source.length,
             after: optimized.length,
             saved: source.length - optimized.length,
           })
         } catch (error: any) {
-          failures.push({ productId: product.id, url: product.imageUrl, error: error?.message || 'Optimization failed' })
+          failures.push({ productId: product.id, url: originalUrl, error: error?.message || 'Optimization failed' })
         }
       }
     }
 
-    // Persist only catalogs that actually changed. URLs are normally unchanged
-    // because the existing Blob pathname is overwritten in place.
     for (const catalog of catalogs) {
       if (changes.some(change => change.key === catalog.key)) {
         await saveCatalog(sql, catalog.key, catalog.products)
