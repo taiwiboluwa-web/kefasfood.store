@@ -1,6 +1,5 @@
 import { products as staticProducts, Product } from '../app/data/products'
 
-// Neon PostgreSQL is the single source of truth for persistent admin/inventory state.
 const KEYS = {
   STOCK_STATUS: 'kefas_stock_status',
   PRODUCT_PRICES: 'kefas_product_prices',
@@ -16,7 +15,6 @@ const LAST_KNOWN_GOOD_PRICES = 'kefas_last_known_good_prices'
 const LAST_KNOWN_GOOD_VARIANT_PRICES = 'kefas_last_known_good_variant_prices'
 
 type KVKey = (typeof KEYS)[keyof typeof KEYS]
-
 type ProductPrices = Record<string, number>
 type VariantPrices = Record<string, Record<string, number>>
 type StockStatus = Record<string, boolean>
@@ -27,9 +25,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isValidCatalog(value: unknown): value is Product[] {
   return Array.isArray(value) && value.length > 0 && value.every(product => (
-    isRecord(product) &&
-    typeof product.id === 'string' && product.id.length > 0 &&
-    typeof product.name === 'string'
+    isRecord(product) && typeof product.id === 'string' && product.id.length > 0 && typeof product.name === 'string'
   ))
 }
 
@@ -110,6 +106,17 @@ function initialVariantPrices(products: Product[]): VariantPrices {
   return result
 }
 
+function readJsonValue<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
 function publishNeonUpdate(key: KVKey, value: unknown) {
   if (typeof window === 'undefined') return
   const events: Record<KVKey, string> = {
@@ -126,7 +133,6 @@ function publishNeonUpdate(key: KVKey, value: unknown) {
   if (key === KEYS.VARIANT_PRICES && !isValidVariantPrices(value)) return
   if (key === KEYS.STOCK_STATUS && !isValidStock(value)) return
 
-  const eventName = events[key]
   if (key === KEYS.PRODUCT_PRICES || key === KEYS.VARIANT_PRICES) {
     window.dispatchEvent(new CustomEvent('kefas_prices_updated', {
       detail: {
@@ -136,46 +142,26 @@ function publishNeonUpdate(key: KVKey, value: unknown) {
     }))
     return
   }
-  window.dispatchEvent(new CustomEvent(eventName, { detail: value }))
-}
-
-function readJsonObject<T>(key: string): T | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return isRecord(parsed) ? parsed as T : null
-  } catch {
-    return null
-  }
+  window.dispatchEvent(new CustomEvent(events[key], { detail: value }))
 }
 
 function readLastKnownGoodCatalog(): Product[] | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const snapshot = localStorage.getItem(LAST_KNOWN_GOOD_PRODUCTS) || localStorage.getItem(KEYS.ALL_PRODUCTS)
-    if (!snapshot) return null
-    const parsed = JSON.parse(snapshot)
-    return isValidCatalog(parsed) ? parsed : null
-  } catch (error) {
-    console.error('Failed to read last-known-good catalog:', error)
-    return null
-  }
+  const parsed = readJsonValue<unknown>(LAST_KNOWN_GOOD_PRODUCTS) ?? readJsonValue<unknown>(KEYS.ALL_PRODUCTS)
+  return isValidCatalog(parsed) ? parsed : null
 }
 
 function readLastKnownGoodPrices(): ProductPrices | null {
-  const snapshot = readJsonObject<ProductPrices>(LAST_KNOWN_GOOD_PRICES)
-  if (snapshot && isValidPrices(snapshot)) return snapshot
-  const active = readJsonObject<ProductPrices>(KEYS.PRODUCT_PRICES)
-  return active && isValidPrices(active) ? active : null
+  const snapshot = readJsonValue<unknown>(LAST_KNOWN_GOOD_PRICES)
+  if (isValidPrices(snapshot)) return snapshot
+  const active = readJsonValue<unknown>(KEYS.PRODUCT_PRICES)
+  return isValidPrices(active) ? active : null
 }
 
 function readLastKnownGoodVariantPrices(): VariantPrices | null {
-  const snapshot = readJsonObject<VariantPrices>(LAST_KNOWN_GOOD_VARIANT_PRICES)
-  if (snapshot && isValidVariantPrices(snapshot)) return snapshot
-  const active = readJsonObject<VariantPrices>(KEYS.VARIANT_PRICES)
-  return active && isValidVariantPrices(active) ? active : null
+  const snapshot = readJsonValue<unknown>(LAST_KNOWN_GOOD_VARIANT_PRICES)
+  if (isValidVariantPrices(snapshot)) return snapshot
+  const active = readJsonValue<unknown>(KEYS.VARIANT_PRICES)
+  return isValidVariantPrices(active) ? active : null
 }
 
 export async function syncFromNeon(): Promise<void> {
@@ -191,7 +177,6 @@ export async function syncFromNeon(): Promise<void> {
 
   const [stockStatus, productPrices, variantPrices, allProducts, comingSoonEnabled, comingSoonProducts, customProducts] = values
 
-  // NEVER allow a transient network/API/Neon failure to erase a working catalog.
   if (!isValidCatalog(allProducts)) {
     const lastKnownGood = readLastKnownGoodCatalog()
     if (lastKnownGood) {
@@ -203,7 +188,7 @@ export async function syncFromNeon(): Promise<void> {
     return
   }
 
-  const catalog: Product[] = allProducts
+  const catalog = allProducts
   const savedPrices = readLastKnownGoodPrices()
   const savedVariantPrices = readLastKnownGoodVariantPrices()
   const resolvedStock = isValidStock(stockStatus) ? stockStatus : initialStock(catalog)
@@ -212,10 +197,10 @@ export async function syncFromNeon(): Promise<void> {
   const resolvedComingSoonEnabled = typeof comingSoonEnabled === 'boolean' ? comingSoonEnabled : false
   const resolvedComingSoonProducts = Array.isArray(comingSoonProducts) && comingSoonProducts.every(item => typeof item === 'string')
     ? comingSoonProducts
-    : (readJsonObject<string[]>(KEYS.COMING_SOON_PRODUCTS) || [])
+    : (readJsonValue<string[]>(KEYS.COMING_SOON_PRODUCTS) || [])
   const resolvedCustomProducts = Array.isArray(customProducts)
     ? customProducts
-    : (readJsonObject<Product[]>(KEYS.CUSTOM_PRODUCTS) || [])
+    : (readJsonValue<Product[]>(KEYS.CUSTOM_PRODUCTS) || [])
 
   const writes: Promise<void>[] = []
   if (!isValidStock(stockStatus)) writes.push(requireNeonSave(KEYS.STOCK_STATUS, resolvedStock))
@@ -225,7 +210,6 @@ export async function syncFromNeon(): Promise<void> {
   if (!(Array.isArray(comingSoonProducts) && comingSoonProducts.every(item => typeof item === 'string'))) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, resolvedComingSoonProducts))
   if (!Array.isArray(customProducts)) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, resolvedCustomProducts))
 
-  // Only a verified non-empty Neon catalog becomes the active local state.
   localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
   localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(catalog))
   localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(resolvedStock))
@@ -274,18 +258,20 @@ export async function syncAllToNeon(): Promise<void> {
 
 export const stockStatusSync = {
   async save(value: Record<string, boolean>) {
+    if (!isValidStock(value)) throw new Error('Invalid stock status payload')
     await requireNeonSave(KEYS.STOCK_STATUS, value)
     localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(value))
   },
-  async load() { return getFromKV(KEYS.STOCK_STATUS) as Promise<Record<string, boolean> | null> },
+  async load() {
+    const value = await getFromKV(KEYS.STOCK_STATUS)
+    return isValidStock(value) ? value : null
+  },
 }
 
 export const productPricesSync = {
   async save(prices: Record<string, number>, variantPrices: Record<string, Record<string, number>>) {
     if (!isValidPrices(prices)) throw new Error('Invalid product prices payload')
     if (!isValidVariantPrices(variantPrices)) throw new Error('Invalid variant prices payload')
-    // Persist to Neon first. If either verified write fails, throw and do not
-    // leave the browser with a value that was never successfully persisted.
     await requireNeonSave(KEYS.PRODUCT_PRICES, prices)
     await requireNeonSave(KEYS.VARIANT_PRICES, variantPrices)
     localStorage.setItem(KEYS.PRODUCT_PRICES, JSON.stringify(prices))
@@ -315,15 +301,13 @@ export const comingSoonSync = {
 export const productsSync = {
   async save(products: Product[]) {
     if (!isValidCatalog(products)) throw new Error('Refusing to save an empty or invalid product catalog')
-    const catalog = products
-    await requireNeonSave(KEYS.ALL_PRODUCTS, catalog)
-    localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
-    localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(catalog))
+    await requireNeonSave(KEYS.ALL_PRODUCTS, products)
+    localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(products))
+    localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(products))
   },
   async load() {
     const value = await getFromKV(KEYS.ALL_PRODUCTS)
-    if (isValidCatalog(value)) return value as Product[]
-    return readLastKnownGoodCatalog() || staticProducts
+    return isValidCatalog(value) ? value : (readLastKnownGoodCatalog() || staticProducts)
   },
 }
 
@@ -343,9 +327,6 @@ export const syncFromSupabase = syncFromNeon
 export const syncToSupabase = syncToNeon
 export const syncAllToSupabase = syncAllToNeon
 
-// Do not poll Neon every 30 seconds. A transient background request was able
-// to mutate the visible catalog long after initial load. Keep the loaded state
-// stable; an explicit reload/focus refresh can still reconcile with Neon.
 if (typeof window !== 'undefined') {
   const refresh = () => syncFromNeon().catch(error => console.error('Neon refresh failed:', error))
   window.addEventListener('focus', refresh)
