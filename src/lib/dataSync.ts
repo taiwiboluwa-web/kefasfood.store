@@ -15,7 +15,8 @@ type KVKey = (typeof KEYS)[keyof typeof KEYS]
 
 async function getFromKV(key: KVKey): Promise<any | null> {
   try {
-    const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}`, { method: 'GET', cache: 'no-store' })
+    const cacheBust = Date.now().toString()
+    const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}&cacheBust=${cacheBust}`, { method: 'GET', cache: 'no-store' })
     if (!response.ok) return null
     const data = await response.json()
     return data?.value ?? null
@@ -100,7 +101,17 @@ export async function syncFromNeon(): Promise<void> {
   ])
 
   const [stockStatus, productPrices, variantPrices, allProducts, comingSoonEnabled, comingSoonProducts, customProducts] = values
-  const catalog: Product[] = Array.isArray(allProducts) && allProducts.length ? allProducts : [...staticProducts]
+
+  // Never replace a working storefront/admin catalog with an empty or missing
+  // response caused by a transient network, deployment, or Neon connection issue.
+  // The public catalog is only hydrated from Neon when a real non-empty catalog
+  // is returned. This prevents the products from disappearing after background refreshes.
+  if (!Array.isArray(allProducts) || allProducts.length === 0) {
+    console.warn('Neon catalog response was empty/unavailable; preserving current product catalog')
+    return
+  }
+
+  const catalog: Product[] = allProducts
   const resolvedStock = stockStatus ?? initialStock(catalog)
   const resolvedPrices = productPrices ?? initialPrices(catalog)
   const resolvedVariantPrices = variantPrices ?? initialVariantPrices(catalog)
@@ -109,7 +120,6 @@ export async function syncFromNeon(): Promise<void> {
   const resolvedCustomProducts = Array.isArray(customProducts) ? customProducts : []
 
   const writes: Promise<void>[] = []
-  if (!Array.isArray(allProducts) || allProducts.length === 0) writes.push(requireNeonSave(KEYS.ALL_PRODUCTS, catalog))
   if (stockStatus === null) writes.push(requireNeonSave(KEYS.STOCK_STATUS, resolvedStock))
   if (productPrices === null) writes.push(requireNeonSave(KEYS.PRODUCT_PRICES, resolvedPrices))
   if (variantPrices === null) writes.push(requireNeonSave(KEYS.VARIANT_PRICES, resolvedVariantPrices))
@@ -118,8 +128,6 @@ export async function syncFromNeon(): Promise<void> {
   if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, []))
 
   // Hydrate the browser from Neon before attempting optional bootstrap writes.
-  // A failed write for an optional/missing key must never prevent the admin
-  // inventory from receiving the authoritative catalog, prices, and stock data.
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
     [KEYS.PRODUCT_PRICES, resolvedPrices],
@@ -197,7 +205,6 @@ export const productsSync = {
   async load() {
     const value = await getFromKV(KEYS.ALL_PRODUCTS)
     if (Array.isArray(value) && value.length) return value as Product[]
-    await requireNeonSave(KEYS.ALL_PRODUCTS, staticProducts)
     return staticProducts
   },
 }
@@ -212,8 +219,8 @@ export const syncFromSupabase = syncFromNeon
 export const syncToSupabase = syncToNeon
 export const syncAllToSupabase = syncAllToNeon
 
-// Keep open storefront tabs aligned with Neon without requiring a hard refresh.
-// The interval is deliberately conservative to avoid excessive database/API traffic.
+// Keep open storefront tabs aligned with Neon without allowing a transient
+// empty API response to erase a working catalog.
 if (typeof window !== 'undefined') {
   const refresh = () => syncFromNeon().catch(error => console.error('Background Neon refresh failed:', error))
   window.setInterval(refresh, 30000)
