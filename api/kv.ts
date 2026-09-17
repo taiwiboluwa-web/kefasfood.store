@@ -16,7 +16,7 @@ const MAX_BODY_BYTES = 512_000;
 function sendJson(res: any, data: unknown, status = 200) {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.setHeader('cache-control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store');
   res.end(JSON.stringify(data));
 }
 

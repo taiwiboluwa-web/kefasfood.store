@@ -24,8 +24,7 @@ async function getFromKV(key: KVKey): Promise<any | null> {
       method: 'GET',
       cache: 'no-store',
       headers: {
-        'cache-control': 'no-cache',
-        pragma: 'no-cache',
+        'Cache-Control': 'no-store',
       },
     })
     if (!response.ok) return null
@@ -44,7 +43,7 @@ async function setInKV(key: KVKey, value: unknown): Promise<boolean> {
       cache: 'no-store',
       headers: {
         'content-type': 'application/json',
-        'cache-control': 'no-cache',
+        'Cache-Control': 'no-store',
       },
       body: JSON.stringify({ key, value }),
     })

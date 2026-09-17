@@ -41,7 +41,10 @@ async function optimizeBlobImage(url: string, productId: string): Promise<{ url:
 }
 
 async function optimizeExistingProductImages(setStatus: (value: string) => void): Promise<void> {
-  const productsResponse = await fetch('/api/kv?key=kefas_all_products', { cache: 'no-store' });
+  const productsResponse = await fetch('/api/kv?key=kefas_all_products', {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-store' },
+  });
   const productsData = await productsResponse.json();
   if (!productsResponse.ok || !Array.isArray(productsData?.value)) throw new Error('Could not load the product catalog from Neon');
 
@@ -89,7 +92,11 @@ async function optimizeExistingProductImages(setStatus: (value: string) => void)
   if (processed > 0) {
     const saveResponse = await fetch('/api/kv', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+      cache: 'no-store',
       body: JSON.stringify({ key: 'kefas_all_products', value: updatedProducts }),
     });
     const saveData = await saveResponse.json().catch(() => null);

@@ -14,11 +14,11 @@ if (!sync.includes('Array.isArray(allProducts) || allProducts.length === 0')) {
 if (!sync.includes('readLastKnownGoodCatalog()')) {
   throw new Error('syncFromNeon must fall back to the last-known-good catalog');
 }
-if (!sync.includes("cache: 'no-store'")) {
+if (!source.includes("cache: 'no-store'")) {
   throw new Error('Neon reads must bypass browser/Vercel fetch caching');
 }
-if (!sync.includes("'cache-control': 'no-cache'")) {
-  throw new Error('Neon requests must send explicit cache-busting headers');
+if (!source.includes("'Cache-Control': 'no-store'")) {
+  throw new Error('Neon requests must send strict no-store headers');
 }
 if (!sync.includes('Promise.allSettled(writes)')) {
   throw new Error('Optional Neon bootstrap writes must not block admin inventory hydration');
@@ -30,7 +30,7 @@ if (!source.includes("window.addEventListener('focus', refresh)")) {
   throw new Error('Storefront should retain an explicit focus refresh path');
 }
 
-if (!api.includes("res.setHeader('cache-control', 'no-store')")) {
+if (!api.includes("res.setHeader('Cache-Control', 'no-store')")) {
   throw new Error('/api/kv must return Cache-Control: no-store');
 }
 if (!api.includes('value = ${serializedValue}::jsonb')) {

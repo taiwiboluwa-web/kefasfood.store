@@ -85,7 +85,12 @@ export function MainPage() {
       let allProducts: Product[] = staticProducts;
       if (storedAllProducts) {
         try {
-          allProducts = JSON.parse(storedAllProducts);
+          const parsedProducts = JSON.parse(storedAllProducts);
+          if (Array.isArray(parsedProducts) && parsedProducts.length > 0) {
+            allProducts = parsedProducts;
+          } else {
+            console.warn('Ignoring empty storefront catalog and keeping the static catalog');
+          }
         } catch (e) {
           console.error('Failed to parse all products:', e);
         }
@@ -155,6 +160,10 @@ export function MainPage() {
       const customEvent = e as CustomEvent;
       if (customEvent.detail) {
         const allProducts = customEvent.detail as Product[];
+        if (!Array.isArray(allProducts) || allProducts.length === 0) {
+          console.warn('Ignoring empty product update event');
+          return;
+        }
         
         // Re-apply current stock and prices
         try {

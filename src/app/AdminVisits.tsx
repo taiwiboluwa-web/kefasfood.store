@@ -238,7 +238,10 @@ export function AdminVisits() {
       
       if (storedProducts) {
         // Use existing product list from localStorage
-        loadedProducts = JSON.parse(storedProducts);
+        const parsedProducts = JSON.parse(storedProducts);
+        loadedProducts = Array.isArray(parsedProducts) && parsedProducts.length > 0
+          ? parsedProducts
+          : [...staticProducts];
       } else {
         // First time: Initialize with static products
         loadedProducts = [...staticProducts];
@@ -332,10 +335,9 @@ export function AdminVisits() {
     setStockStatus(newStockStatus);
 
     try {
-      localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
-
       // Sync to Neon for cross-account updates
       await stockStatusSync.save(newStockStatus);
+      localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
 
       // Dispatch a custom event so the storefront components can update in real-time
       window.dispatchEvent(new CustomEvent('kefas_stock_updated', {
@@ -363,10 +365,9 @@ export function AdminVisits() {
     setProductPrices(newPrices);
 
     try {
-      localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
-
       // Sync to Neon for cross-account updates
       await productPricesSync.save(newPrices, variantPrices);
+      localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
 
       // Dispatch custom event for storefront
       window.dispatchEvent(new CustomEvent('kefas_prices_updated', {
@@ -408,18 +409,15 @@ export function AdminVisits() {
     if (product && product.weight === weight) {
       newProductPrices[productId] = newPrice;
       setProductPrices(newProductPrices);
-      try {
-        localStorage.setItem('kefas_product_prices', JSON.stringify(newProductPrices));
-      } catch (err) {
-        console.error(err);
-      }
     }
 
     try {
-      localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
-
       // Sync to Neon for cross-account updates
       await productPricesSync.save(newProductPrices, newVariantPrices);
+      if (product && product.weight === weight) {
+        localStorage.setItem('kefas_product_prices', JSON.stringify(newProductPrices));
+      }
+      localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
 
       window.dispatchEvent(new CustomEvent('kefas_prices_updated', {
         detail: {
@@ -452,10 +450,9 @@ export function AdminVisits() {
 
     // Update localStorage
     try {
-      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
-
       // Sync to Neon for cross-account updates
       await productsSync.save(updatedProducts);
+      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
       
       // Also remove from stock status and prices
       const newStockStatus = { ...stockStatus };
@@ -507,10 +504,9 @@ export function AdminVisits() {
     setAllProducts(updatedProducts);
 
     try {
-      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
-
       // Sync to Neon for cross-account updates
       await productsSync.save(updatedProducts);
+      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
 
       window.dispatchEvent(new CustomEvent('kefas_products_updated', { detail: updatedProducts }));
       window.dispatchEvent(new Event('kefas_inventory_updated'));
@@ -786,17 +782,16 @@ export function AdminVisits() {
       console.log('Adding new product:', newProduct);
       console.log('Variant prices:', newVariantPrices);
 
-      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
-      localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
-      localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
-      localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
-
       // Sync to Neon for cross-account updates
       await Promise.all([
         productsSync.save(updatedProducts),
         stockStatusSync.save(newStockStatus),
         productPricesSync.save(newPrices, newVariantPrices)
       ]);
+      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
+      localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
+      localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
+      localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
 
       window.dispatchEvent(new CustomEvent('kefas_products_updated', { detail: updatedProducts }));
       window.dispatchEvent(new CustomEvent('kefas_stock_updated', { detail: newStockStatus }));
@@ -907,17 +902,16 @@ export function AdminVisits() {
     try {
       console.log('Updating product:', updatedProduct);
 
-      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
-      localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
-      localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
-      localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
-
       // Sync to Neon
       await Promise.all([
         productsSync.save(updatedProducts),
         stockStatusSync.save(newStockStatus),
         productPricesSync.save(newPrices, newVariantPrices)
       ]);
+      localStorage.setItem('kefas_all_products', JSON.stringify(updatedProducts));
+      localStorage.setItem('kefas_stock_status', JSON.stringify(newStockStatus));
+      localStorage.setItem('kefas_product_prices', JSON.stringify(newPrices));
+      localStorage.setItem('kefas_variant_prices', JSON.stringify(newVariantPrices));
 
       window.dispatchEvent(new CustomEvent('kefas_products_updated', { detail: updatedProducts }));
       window.dispatchEvent(new CustomEvent('kefas_stock_updated', { detail: newStockStatus }));
