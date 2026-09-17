@@ -104,8 +104,6 @@ export async function syncFromNeon(): Promise<void> {
 
   // Never replace a working storefront/admin catalog with an empty or missing
   // response caused by a transient network, deployment, or Neon connection issue.
-  // The public catalog is only hydrated from Neon when a real non-empty catalog
-  // is returned. This prevents the products from disappearing after background refreshes.
   if (!Array.isArray(allProducts) || allProducts.length === 0) {
     console.warn('Neon catalog response was empty/unavailable; preserving current product catalog')
     return
@@ -127,7 +125,7 @@ export async function syncFromNeon(): Promise<void> {
   if (comingSoonProducts === null) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, []))
   if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, []))
 
-  // Hydrate the browser from Neon before attempting optional bootstrap writes.
+  // Hydrate only from a validated non-empty Neon catalog.
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
     [KEYS.PRODUCT_PRICES, resolvedPrices],
@@ -142,8 +140,7 @@ export async function syncFromNeon(): Promise<void> {
     publishNeonUpdate(key, value)
   })
 
-  // Bootstrap writes are best-effort because the remote data has already been
-  // loaded into the UI. Do not make a failed optional write blank the inventory.
+  // Bootstrap writes are best-effort and cannot blank a loaded catalog.
   if (writes.length) {
     const results = await Promise.allSettled(writes)
     results.forEach((result, index) => {
@@ -214,18 +211,16 @@ export const customProductsSync = {
   async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
 
-// Legacy names retained for source compatibility.
 export const syncFromSupabase = syncFromNeon
 export const syncToSupabase = syncToNeon
 export const syncAllToSupabase = syncAllToNeon
 
-// Keep open storefront tabs aligned with Neon without allowing a transient
-// empty API response to erase a working catalog.
+// Do not poll Neon every 30 seconds. A transient background request was able
+// to mutate the visible catalog long after initial load. Keep the loaded state
+// stable; an explicit reload/focus refresh can still reconcile with Neon.
 if (typeof window !== 'undefined') {
-  const refresh = () => syncFromNeon().catch(error => console.error('Background Neon refresh failed:', error))
-  window.setInterval(refresh, 30000)
+  const refresh = () => syncFromNeon().catch(error => console.error('Neon refresh failed:', error))
   window.addEventListener('focus', refresh)
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh() })
 }
 
 export { KEYS }
