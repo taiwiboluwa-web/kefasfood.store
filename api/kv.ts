@@ -79,6 +79,37 @@ async function readBody(req: any): Promise<any> {
   return body ? JSON.parse(body) : {};
 }
 
+async function triggerProductionDeployment(): Promise<boolean> {
+  const hookUrl = process.env.VERCEL_DEPLOY_HOOK_URL;
+  if (!hookUrl) {
+    console.warn('VERCEL_DEPLOY_HOOK_URL is not configured; Neon save completed without a deployment trigger.');
+    return false;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(hookUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: 'kefas-admin-neon-save' }),
+      });
+      if (!response.ok) {
+        console.error('Vercel production deploy hook failed:', response.status);
+        return false;
+      }
+      return true;
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (error) {
+    console.error('Vercel production deploy hook request failed:', error);
+    return false;
+  }
+}
+
 export default async function handler(req: any, res: any) {
   if (!process.env.DATABASE_URL) return sendJson(res, { error: 'DATABASE_URL is not configured' }, 500);
   if (req.method !== 'GET' && req.method !== 'POST') return sendJson(res, { error: 'Method not allowed' }, 405);
@@ -157,7 +188,17 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, { error: 'Neon write verification failed' }, 500);
     }
 
-    return sendJson(res, { ok: true, value: persisted[0].value, updatedAt: persisted[0].updated_at ?? null });
+    // Neon is authoritative. Once the write is verified, trigger a fresh
+    // production deployment so any statically cached storefront assets are
+    // refreshed as well. A hook failure never rolls back the verified Neon save.
+    const deploymentTriggered = await triggerProductionDeployment();
+
+    return sendJson(res, {
+      ok: true,
+      value: persisted[0].value,
+      updatedAt: persisted[0].updated_at ?? null,
+      deploymentTriggered,
+    });
   } catch (error: any) {
     console.error('Neon KV API error:', error);
     return sendJson(res, { error: 'Database operation failed' }, error?.statusCode || 500);
