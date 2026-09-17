@@ -16,7 +16,11 @@ const MAX_BODY_BYTES = 512_000;
 function sendJson(res: any, data: unknown, status = 200) {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
+  res.setHeader('CDN-Cache-Control', 'no-store');
+  res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.end(JSON.stringify(data));
 }
 
@@ -66,6 +70,58 @@ function initialVariantPrices() {
   return result;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function validateValue(key: string, value: unknown): { ok: true } | { ok: false; error: string } {
+  if (key === 'kefas_all_products' || key === 'kefas_custom_products') {
+    if (!Array.isArray(value)) return { ok: false, error: `${key} must be an array` };
+    if (key === 'kefas_all_products' && value.length === 0) return { ok: false, error: 'Refusing to persist an empty product catalog' };
+    if (!value.every(product => isPlainObject(product) && typeof product.id === 'string' && product.id.length > 0 && typeof product.name === 'string')) {
+      return { ok: false, error: `${key} contains an invalid product record` };
+    }
+    return { ok: true };
+  }
+
+  if (key === 'kefas_stock_status' || key === 'kefas_product_prices') {
+    if (!isPlainObject(value)) return { ok: false, error: `${key} must be an object` };
+    if (key === 'kefas_stock_status' && !Object.values(value).every(item => typeof item === 'boolean')) {
+      return { ok: false, error: 'Stock status values must be booleans' };
+    }
+    if (key === 'kefas_product_prices' && !Object.values(value).every(isFiniteNonNegativeNumber)) {
+      return { ok: false, error: 'Product price values must be finite non-negative numbers' };
+    }
+    return { ok: true };
+  }
+
+  if (key === 'kefas_variant_prices') {
+    if (!isPlainObject(value)) return { ok: false, error: 'Variant prices must be an object' };
+    for (const productValue of Object.values(value)) {
+      if (!isPlainObject(productValue) || !Object.values(productValue).every(isFiniteNonNegativeNumber)) {
+        return { ok: false, error: 'Variant price values must be finite non-negative numbers' };
+      }
+    }
+    return { ok: true };
+  }
+
+  if (key === 'kefas_coming_soon_enabled') {
+    return typeof value === 'boolean' ? { ok: true } : { ok: false, error: 'Coming Soon enabled value must be boolean' };
+  }
+
+  if (key === 'kefas_coming_soon_products') {
+    return Array.isArray(value) && value.every(item => typeof item === 'string')
+      ? { ok: true }
+      : { ok: false, error: 'Coming Soon products must be an array of product IDs' };
+  }
+
+  return { ok: false, error: 'Unsupported key' };
+}
+
 async function readBody(req: any): Promise<any> {
   if (req.body !== undefined && req.body !== null) {
     if (typeof req.body === 'object') return req.body;
@@ -77,37 +133,6 @@ async function readBody(req: any): Promise<any> {
     if (Buffer.byteLength(body, 'utf8') > MAX_BODY_BYTES) throw Object.assign(new Error('Request body too large'), { statusCode: 413 });
   }
   return body ? JSON.parse(body) : {};
-}
-
-async function triggerProductionDeployment(): Promise<boolean> {
-  const hookUrl = process.env.VERCEL_DEPLOY_HOOK_URL;
-  if (!hookUrl) {
-    console.warn('VERCEL_DEPLOY_HOOK_URL is not configured; Neon save completed without a deployment trigger.');
-    return false;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    try {
-      const response = await fetch(hookUrl, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source: 'kefas-admin-neon-save' }),
-      });
-      if (!response.ok) {
-        console.error('Vercel production deploy hook failed:', response.status);
-        return false;
-      }
-      return true;
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch (error) {
-    console.error('Vercel production deploy hook request failed:', error);
-    return false;
-  }
 }
 
 export default async function handler(req: any, res: any) {
@@ -129,11 +154,13 @@ export default async function handler(req: any, res: any) {
         LIMIT 1
       `;
 
+      // A missing catalog is an infrastructure/data-integrity condition, not a
+      // reason to silently recreate it from static data. The client will keep
+      // its last-known-good snapshot and retry later.
       if (rows.length === 0 && key === 'kefas_all_products') {
-        const value = staticProducts;
-        await sql`INSERT INTO kv_store_da50176a (key, value, updated_at) VALUES ('kefas_all_products', ${JSON.stringify(value)}::jsonb, now()) ON CONFLICT (key) DO NOTHING`;
-        return sendJson(res, { value });
+        return sendJson(res, { error: 'Product catalog is unavailable' }, 503);
       }
+
       if (rows.length === 0 && key === 'kefas_stock_status') {
         const value = initialStock();
         await sql`INSERT INTO kv_store_da50176a (key, value, updated_at) VALUES ('kefas_stock_status', ${JSON.stringify(value)}::jsonb, now()) ON CONFLICT (key) DO NOTHING`;
@@ -164,6 +191,9 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!isAllowedKey(payload?.key)) return sendJson(res, { error: 'Invalid key' }, 400);
+    const validation = validateValue(payload.key, payload.value);
+    if (!validation.ok) return sendJson(res, { error: validation.error }, 422);
+
     const serializedValue = JSON.stringify(payload.value);
     if (Buffer.byteLength(serializedValue, 'utf8') > MAX_BODY_BYTES) return sendJson(res, { error: 'Request body too large' }, 413);
 
@@ -173,9 +203,8 @@ export default async function handler(req: any, res: any) {
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
     `;
 
-    // Verify the exact semantic JSONB value. Neon/Postgres normally returns
-    // the write immediately, but retry briefly to tolerate a transient
-    // serverless connection/read timing issue instead of rejecting a valid save.
+    // Verify the exact semantic JSONB value. Retry briefly for a transient
+    // serverless read/write timing issue before reporting a hard failure.
     let persisted: any[] = [];
     for (let attempt = 0; attempt < 3; attempt += 1) {
       persisted = await sql`
@@ -194,16 +223,13 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, { error: 'Neon write verification failed' }, 500);
     }
 
-    // Neon is authoritative. Once the write is verified, trigger a fresh
-    // production deployment so any statically cached storefront assets are
-    // refreshed as well. A hook failure never rolls back the verified Neon save.
-    const deploymentTriggered = await triggerProductionDeployment();
-
+    // Do not redeploy Vercel for every data write. Inventory is served from
+    // Neon through an explicitly uncached API; deployment hooks here created
+    // unnecessary deployment churn and could race with each other.
     return sendJson(res, {
       ok: true,
       value: persisted[0].value,
       updatedAt: persisted[0].updated_at ?? null,
-      deploymentTriggered,
     });
   } catch (error: any) {
     console.error('Neon KV API error:', error);
