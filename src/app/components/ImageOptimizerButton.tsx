@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ImageDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -10,6 +10,16 @@ function formatBytes(bytes: number) {
 
 export function ImageOptimizerButton() {
   const [running, setRunning] = useState(false)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const updateVisibility = () => {
+      setVisible(window.location.pathname === '/admin' && sessionStorage.getItem('kefas_admin_auth') === 'true')
+    }
+    updateVisibility()
+    const interval = window.setInterval(updateVisibility, 500)
+    return () => window.clearInterval(interval)
+  }, [])
 
   const optimizeImages = async () => {
     if (running) return
@@ -47,8 +57,7 @@ export function ImageOptimizerButton() {
     }
   }
 
-  if (window.location.pathname !== '/admin') return null
-  if (sessionStorage.getItem('kefas_admin_auth') !== 'true') return null
+  if (!visible) return null
 
   return (
     <button
