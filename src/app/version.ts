@@ -1,5 +1,5 @@
 // App version - increment this to force cache refresh
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.7.1';
 export const CACHE_KEY = `kefas_cache_v${APP_VERSION}`;
 
 // Check and clear old cache versions
@@ -16,6 +16,7 @@ export function clearOldCache() {
       'kefas_product_prices',
       'kefas_variant_prices',
       'kefas_all_products',
+      'kefas_last_known_good_products',
       'kefas_coming_soon_enabled',
       'kefas_coming_soon_products',
       'kefas_custom_products',
