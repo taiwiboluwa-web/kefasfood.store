@@ -1,7 +1,6 @@
 import { products as staticProducts, Product } from '../app/data/products'
 
 // Neon PostgreSQL is the single source of truth for persistent admin/inventory state.
-// The existing storefront catalog is seeded into Neon automatically when the cloud catalog is empty.
 const KEYS = {
   STOCK_STATUS: 'kefas_stock_status',
   PRODUCT_PRICES: 'kefas_product_prices',
@@ -33,8 +32,9 @@ async function setInKV(key: KVKey, value: unknown): Promise<boolean> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ key, value }),
     })
-    if (!response.ok) {
-      console.error(`Failed to save Neon KV key ${key}:`, await response.text())
+    const data = await response.json().catch(() => null)
+    if (!response.ok || data?.ok !== true) {
+      console.error(`Failed to save Neon KV key ${key}:`, data || response.status)
       return false
     }
     return true
@@ -55,9 +55,7 @@ function initialPrices(products: Product[]): Record<string, number> {
 function initialVariantPrices(products: Product[]): Record<string, Record<string, number>> {
   const result: Record<string, Record<string, number>> = {}
   products.forEach(product => {
-    if (product.variants?.length) {
-      result[product.id] = Object.fromEntries(product.variants.map(variant => [variant.weight, variant.price]))
-    }
+    if (product.variants?.length) result[product.id] = Object.fromEntries(product.variants.map(variant => [variant.weight, variant.price]))
   })
   return result
 }
@@ -75,7 +73,6 @@ export async function syncFromNeon(): Promise<void> {
 
   const [stockStatus, productPrices, variantPrices, allProducts, comingSoonEnabled, comingSoonProducts, customProducts] = values
   const catalog: Product[] = Array.isArray(allProducts) && allProducts.length ? allProducts : [...staticProducts]
-
   const resolvedStock = stockStatus ?? initialStock(catalog)
   const resolvedPrices = productPrices ?? initialPrices(catalog)
   const resolvedVariantPrices = variantPrices ?? initialVariantPrices(catalog)
@@ -91,7 +88,10 @@ export async function syncFromNeon(): Promise<void> {
   if (comingSoonEnabled === null) writes.push(setInKV(KEYS.COMING_SOON_ENABLED, false))
   if (comingSoonProducts === null) writes.push(setInKV(KEYS.COMING_SOON_PRODUCTS, []))
   if (customProducts === null) writes.push(setInKV(KEYS.CUSTOM_PRODUCTS, []))
-  if (writes.length) await Promise.all(writes)
+  if (writes.length) {
+    const results = await Promise.all(writes)
+    if (results.some(result => !result)) throw new Error('Neon initialization failed')
+  }
 
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
@@ -119,7 +119,7 @@ export async function syncAllToNeon(): Promise<void> {
     if (value !== null) entries.push([key, JSON.parse(value)])
   })
   const results = await Promise.all(entries.map(([key, value]) => setInKV(key, value)))
-  if (results.length > 0 && results.every(result => !result)) throw new Error('No items were synced to Neon')
+  if (results.length === 0 || results.some(result => !result)) throw new Error('One or more items failed to sync to Neon')
 }
 
 export const stockStatusSync = {
@@ -147,10 +147,7 @@ export const comingSoonSync = {
     const [a, b] = await Promise.all([syncToNeon(KEYS.COMING_SOON_ENABLED, enabled), syncToNeon(KEYS.COMING_SOON_PRODUCTS, products)])
     return a && b
   },
-  async load() {
-    const [enabled, products] = await Promise.all([getFromKV(KEYS.COMING_SOON_ENABLED), getFromKV(KEYS.COMING_SOON_PRODUCTS)])
-    return { enabled, products }
-  },
+  async load() { return { enabled: await getFromKV(KEYS.COMING_SOON_ENABLED), products: await getFromKV(KEYS.COMING_SOON_PRODUCTS) } },
 }
 
 export const productsSync = {
@@ -162,7 +159,7 @@ export const productsSync = {
   async load() {
     const value = await getFromKV(KEYS.ALL_PRODUCTS)
     if (Array.isArray(value) && value.length) return value as Product[]
-    await setInKV(KEYS.ALL_PRODUCTS, staticProducts)
+    if (!await setInKV(KEYS.ALL_PRODUCTS, staticProducts)) throw new Error('Failed to seed product catalog in Neon')
     return staticProducts
   },
 }
@@ -172,7 +169,6 @@ export const customProductsSync = {
   async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
 
-// Legacy names retained for source compatibility. They are Neon-only aliases.
 export const syncFromSupabase = syncFromNeon
 export const syncToSupabase = syncToNeon
 export const syncAllToSupabase = syncAllToNeon
