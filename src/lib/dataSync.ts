@@ -245,15 +245,9 @@ export async function syncToNeon(key: KVKey, value: unknown): Promise<boolean> {
 }
 
 export async function syncAllToNeon(): Promise<void> {
-  const storedCatalog = localStorage.getItem(KEYS.ALL_PRODUCTS)
-  const parsedCatalog = storedCatalog ? JSON.parse(storedCatalog) : null
-  const catalog = isValidCatalog(parsedCatalog) ? parsedCatalog : staticProducts
-  const entries: Array<[KVKey, unknown]> = [[KEYS.ALL_PRODUCTS, catalog]]
-  ;(Object.values(KEYS) as KVKey[]).filter(key => key !== KEYS.ALL_PRODUCTS).forEach(key => {
-    const value = localStorage.getItem(key)
-    if (value !== null) entries.push([key, JSON.parse(value)])
-  })
-  await Promise.all(entries.map(([key, value]) => requireNeonSave(key, value)))
+  // Legacy compatibility: this operation is intentionally pull-only.
+  // Never publish browser localStorage back to Neon during a manual refresh.
+  await syncFromNeon();
 }
 
 export const stockStatusSync = {

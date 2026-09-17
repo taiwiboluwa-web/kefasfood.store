@@ -4,10 +4,55 @@ import { Link } from 'react-router';
 import { products as staticProducts, Product, categories } from './data/products';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
-import { syncFromNeon, stockStatusSync, productPricesSync, comingSoonSync, productsSync, syncAllToNeon } from '../lib/dataSync';
+import { syncFromNeon, stockStatusSync, productPricesSync, comingSoonSync, productsSync } from '../lib/dataSync';
 import { uploadProductImage, deleteProductImage, fileToBase64 } from '../lib/imageStorage';
 import { diagnoseStorageIssues } from '../lib/fixSupabaseStorage';
 import { clearOldCache } from './version';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidCatalog(value: unknown): value is Product[] {
+  return Array.isArray(value) && value.length > 0 && value.every(product => (
+    isRecord(product) && typeof product.id === 'string' && product.id.length > 0 && typeof product.name === 'string'
+  ));
+}
+
+function isValidPrices(value: unknown): value is Record<string, number> {
+  return isRecord(value) && Object.values(value).every(item => typeof item === 'number' && Number.isFinite(item) && item >= 0);
+}
+
+function isValidVariantPrices(value: unknown): value is Record<string, Record<string, number>> {
+  return isRecord(value) && Object.values(value).every(productValue => (
+    isRecord(productValue) && Object.values(productValue).every(item => typeof item === 'number' && Number.isFinite(item) && item >= 0)
+  ));
+}
+
+function isValidStock(value: unknown): value is Record<string, boolean> {
+  return isRecord(value) && Object.values(value).every(item => typeof item === 'boolean');
+}
+
+function isValidComingSoonProducts(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function isValidVisits(value: unknown): value is VisitData[] {
+  return Array.isArray(value) && value.every(item => (
+    isRecord(item) && typeof item.id === 'string' && typeof item.timestamp === 'number' && Number.isFinite(item.timestamp)
+  ));
+}
+
+function readValidatedStorage<T>(key: string, validator: (value: unknown) => value is T): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return validator(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 interface VisitData {
   id: string;
@@ -87,63 +132,62 @@ export function AdminVisits() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Listen for custom events dispatched by this same admin panel
+    // Accept only validated payloads from same-tab events and cross-tab storage events.
     const handleStockUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        setStockStatus(customEvent.detail);
-      }
+      const detail = (e as CustomEvent).detail;
+      if (isValidStock(detail)) setStockStatus(detail);
     };
 
     const handlePriceUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        const { productPrices, variantPrices } = customEvent.detail;
-        if (productPrices) setProductPrices(productPrices);
-        if (variantPrices) setVariantPrices(variantPrices);
-      }
+      const detail = (e as CustomEvent).detail;
+      if (!isRecord(detail)) return;
+      if (isValidPrices(detail.productPrices)) setProductPrices(detail.productPrices);
+      if (isValidVariantPrices(detail.variantPrices)) setVariantPrices(detail.variantPrices);
     };
 
     const handleProductsUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        setAllProducts(customEvent.detail);
-      }
+      const detail = (e as CustomEvent).detail;
+      if (isValidCatalog(detail)) setAllProducts(detail);
     };
 
     const handleComingSoonUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        const { enabled, products } = customEvent.detail;
-        setComingSoonEnabled(enabled);
-        setComingSoonProducts(products);
-      }
+      const detail = (e as CustomEvent).detail;
+      if (!isRecord(detail)) return;
+      if (typeof detail.enabled === 'boolean') setComingSoonEnabled(detail.enabled);
+      if (isValidComingSoonProducts(detail.products)) setComingSoonProducts(detail.products);
     };
 
-    // Listen for storage changes from other tabs
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'kefas_stock_status' && e.newValue) {
-        setStockStatus(JSON.parse(e.newValue));
+      if (e.key === 'kefas_stock_status') {
+        const value = readValidatedStorage(e.key, isValidStock);
+        if (value) setStockStatus(value);
       }
-      if (e.key === 'kefas_product_prices' && e.newValue) {
-        setProductPrices(JSON.parse(e.newValue));
+      if (e.key === 'kefas_product_prices') {
+        const value = readValidatedStorage(e.key, isValidPrices);
+        if (value) setProductPrices(value);
       }
-      if (e.key === 'kefas_variant_prices' && e.newValue) {
-        setVariantPrices(JSON.parse(e.newValue));
+      if (e.key === 'kefas_variant_prices') {
+        const value = readValidatedStorage(e.key, isValidVariantPrices);
+        if (value) setVariantPrices(value);
       }
-      if (e.key === 'kefas_all_products' && e.newValue) {
-        setAllProducts(JSON.parse(e.newValue));
+      if (e.key === 'kefas_all_products') {
+        const value = readValidatedStorage(e.key, isValidCatalog);
+        if (value) setAllProducts(value);
       }
-      if (e.key === 'kefas_coming_soon_enabled' && e.newValue) {
-        setComingSoonEnabled(JSON.parse(e.newValue));
+      if (e.key === 'kefas_coming_soon_enabled') {
+        const value = readValidatedStorage(e.key, (item): item is boolean => typeof item === 'boolean');
+        if (value !== null) setComingSoonEnabled(value);
       }
-      if (e.key === 'kefas_coming_soon_products' && e.newValue) {
-        setComingSoonProducts(JSON.parse(e.newValue));
+      if (e.key === 'kefas_coming_soon_products') {
+        const value = readValidatedStorage(e.key, isValidComingSoonProducts);
+        if (value) setComingSoonProducts(value);
       }
-      if (e.key === 'kefas_local_visits' && e.newValue) {
-        const visits = JSON.parse(e.newValue);
-        visits.sort((a: VisitData, b: VisitData) => b.timestamp - a.timestamp);
-        setVisits(visits);
+      if (e.key === 'kefas_local_visits') {
+        const value = readValidatedStorage(e.key, isValidVisits);
+        if (value) {
+          value.sort((a, b) => b.timestamp - a.timestamp);
+          setVisits(value);
+        }
       }
     };
 
@@ -153,11 +197,6 @@ export function AdminVisits() {
     window.addEventListener('kefas_coming_soon_updated', handleComingSoonUpdate);
     window.addEventListener('storage', handleStorageChange);
 
-    // Poll less frequently (30 seconds) as a fallback for edge cases
-    const intervalId = setInterval(() => {
-      fetchVisits(false);
-      fetchStock(false);
-    }, 30000);
 
     return () => {
       window.removeEventListener('kefas_stock_updated', handleStockUpdate);
@@ -165,7 +204,6 @@ export function AdminVisits() {
       window.removeEventListener('kefas_products_updated', handleProductsUpdate);
       window.removeEventListener('kefas_coming_soon_updated', handleComingSoonUpdate);
       window.removeEventListener('storage', handleStorageChange);
-      clearInterval(intervalId);
     };
   }, [isAuthenticated]);
 
@@ -212,9 +250,8 @@ export function AdminVisits() {
     if (shouldLoad) setLoading(true);
     setError(null);
     try {
-      const storedVisits = localStorage.getItem('kefas_local_visits');
-      const visits = storedVisits ? JSON.parse(storedVisits) : [];
-      visits.sort((a: VisitData, b: VisitData) => b.timestamp - a.timestamp);
+      const visits = readValidatedStorage('kefas_local_visits', isValidVisits) || [];
+      visits.sort((a, b) => b.timestamp - a.timestamp);
       setVisits(visits);
     } catch (err: any) {
       console.error('Failed to fetch visits from localStorage:', err);
@@ -614,12 +651,10 @@ export function AdminVisits() {
   const handleManualSync = async () => {
     setIsSyncing(true);
     try {
-      console.log('🔄 Starting manual sync to Neon...');
-      
-      // First sync TO Neon (push all local data to cloud)
-      await syncAllToNeon();
-      
-      // Then sync FROM Neon (pull latest data from cloud)
+      console.log('🔄 Pulling authoritative data from Neon...');
+
+      // Manual sync is pull-only. A stale browser must never publish its local cache
+      // over authoritative Neon data. Individual save actions already persist to Neon first.
       await syncFromNeon();
       
       // Reload the stock data to reflect any changes
