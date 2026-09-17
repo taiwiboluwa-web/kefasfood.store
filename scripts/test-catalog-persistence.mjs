@@ -11,7 +11,7 @@ if (!source.includes("localStorage.setItem('kefas_last_known_good_products', JSO
 if (!source.includes('Array.isArray(allProducts) || allProducts.length === 0')) {
   throw new Error('Empty/unavailable Neon catalogs must be rejected');
 }
-if (!source.includes("window.localStorage.getItem(KEYS.ALL_PRODUCTS)")) {
+if (!source.includes('localStorage.getItem(KEYS.ALL_PRODUCTS)')) {
   throw new Error('Catalog fallback must inspect existing local state');
 }
 if (source.includes('window.setInterval(refresh, 30000)')) {
