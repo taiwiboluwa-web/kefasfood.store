@@ -12,13 +12,22 @@ const KEYS = {
 } as const
 
 const LAST_KNOWN_GOOD_PRODUCTS = 'kefas_last_known_good_products'
+const LAST_KNOWN_GOOD_PRICES = 'kefas_last_known_good_prices'
+const LAST_KNOWN_GOOD_VARIANT_PRICES = 'kefas_last_known_good_variant_prices'
 
 type KVKey = (typeof KEYS)[keyof typeof KEYS]
 
 async function getFromKV(key: KVKey): Promise<any | null> {
   try {
     const cacheBust = Date.now().toString()
-    const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}&cacheBust=${cacheBust}`, { method: 'GET', cache: 'no-store' })
+    const response = await fetch(`/api/kv?key=${encodeURIComponent(key)}&cacheBust=${cacheBust}`, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        'cache-control': 'no-cache',
+        pragma: 'no-cache',
+      },
+    })
     if (!response.ok) return null
     const data = await response.json()
     return data?.value ?? null
@@ -32,7 +41,11 @@ async function setInKV(key: KVKey, value: unknown): Promise<boolean> {
   try {
     const response = await fetch('/api/kv', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      cache: 'no-store',
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'no-cache',
+      },
       body: JSON.stringify({ key, value }),
     })
     const data = await response.json().catch(() => null)
@@ -92,6 +105,17 @@ function publishNeonUpdate(key: KVKey, value: unknown) {
   window.dispatchEvent(new CustomEvent(eventName, { detail: value }))
 }
 
+function readJsonObject<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
 function readLastKnownGoodCatalog(): Product[] | null {
   if (typeof window === 'undefined') return null
   try {
@@ -103,6 +127,14 @@ function readLastKnownGoodCatalog(): Product[] | null {
     console.error('Failed to read last-known-good catalog:', error)
     return null
   }
+}
+
+function readLastKnownGoodPrices(): Record<string, number> | null {
+  return readJsonObject<Record<string, number>>(LAST_KNOWN_GOOD_PRICES) || readJsonObject<Record<string, number>>(KEYS.PRODUCT_PRICES)
+}
+
+function readLastKnownGoodVariantPrices(): Record<string, Record<string, number>> | null {
+  return readJsonObject<Record<string, Record<string, number>>>(LAST_KNOWN_GOOD_VARIANT_PRICES) || readJsonObject<Record<string, Record<string, number>>>(KEYS.VARIANT_PRICES)
 }
 
 export async function syncFromNeon(): Promise<void> {
@@ -118,8 +150,7 @@ export async function syncFromNeon(): Promise<void> {
 
   const [stockStatus, productPrices, variantPrices, allProducts, comingSoonEnabled, comingSoonProducts, customProducts] = values
 
-  // Never replace a working storefront/admin catalog with an empty or missing
-  // response caused by a transient network, deployment, or Neon connection issue.
+  // NEVER allow a transient network/API/Neon failure to erase a working catalog.
   if (!Array.isArray(allProducts) || allProducts.length === 0) {
     const lastKnownGood = readLastKnownGoodCatalog()
     if (lastKnownGood) {
@@ -132,24 +163,34 @@ export async function syncFromNeon(): Promise<void> {
   }
 
   const catalog: Product[] = allProducts
+  const savedPrices = readLastKnownGoodPrices()
+  const savedVariantPrices = readLastKnownGoodVariantPrices()
   const resolvedStock = stockStatus ?? initialStock(catalog)
-  const resolvedPrices = productPrices ?? initialPrices(catalog)
-  const resolvedVariantPrices = variantPrices ?? initialVariantPrices(catalog)
+  const resolvedPrices = productPrices ?? savedPrices ?? initialPrices(catalog)
+  const resolvedVariantPrices = variantPrices ?? savedVariantPrices ?? initialVariantPrices(catalog)
   const resolvedComingSoonEnabled = comingSoonEnabled ?? false
-  const resolvedComingSoonProducts = Array.isArray(comingSoonProducts) ? comingSoonProducts : []
-  const resolvedCustomProducts = Array.isArray(customProducts) ? customProducts : []
+  const resolvedComingSoonProducts = Array.isArray(comingSoonProducts) ? comingSoonProducts : (readJsonObject<string[]>(KEYS.COMING_SOON_PRODUCTS) || [])
+  const resolvedCustomProducts = Array.isArray(customProducts) ? customProducts : (readJsonObject<Product[]>(KEYS.CUSTOM_PRODUCTS) || [])
 
   const writes: Promise<void>[] = []
   if (stockStatus === null) writes.push(requireNeonSave(KEYS.STOCK_STATUS, resolvedStock))
   if (productPrices === null) writes.push(requireNeonSave(KEYS.PRODUCT_PRICES, resolvedPrices))
   if (variantPrices === null) writes.push(requireNeonSave(KEYS.VARIANT_PRICES, resolvedVariantPrices))
   if (comingSoonEnabled === null) writes.push(requireNeonSave(KEYS.COMING_SOON_ENABLED, false))
-  if (comingSoonProducts === null) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, []))
-  if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, []))
+  if (comingSoonProducts === null) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, resolvedComingSoonProducts))
+  if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, resolvedCustomProducts))
 
-  // Persist a last-known-good catalog before any optional bootstrap writes.
+  // Only a verified non-empty Neon catalog becomes the active local state.
   localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
   localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(catalog))
+  localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(resolvedStock))
+  localStorage.setItem(KEYS.PRODUCT_PRICES, JSON.stringify(resolvedPrices))
+  localStorage.setItem(LAST_KNOWN_GOOD_PRICES, JSON.stringify(resolvedPrices))
+  localStorage.setItem(KEYS.VARIANT_PRICES, JSON.stringify(resolvedVariantPrices))
+  localStorage.setItem(LAST_KNOWN_GOOD_VARIANT_PRICES, JSON.stringify(resolvedVariantPrices))
+  localStorage.setItem(KEYS.COMING_SOON_ENABLED, JSON.stringify(resolvedComingSoonEnabled))
+  localStorage.setItem(KEYS.COMING_SOON_PRODUCTS, JSON.stringify(resolvedComingSoonProducts))
+  localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(resolvedCustomProducts))
 
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
@@ -160,18 +201,12 @@ export async function syncFromNeon(): Promise<void> {
     [KEYS.COMING_SOON_PRODUCTS, resolvedComingSoonProducts],
     [KEYS.CUSTOM_PRODUCTS, resolvedCustomProducts],
   ]
-  localValues.forEach(([key, value]) => {
-    localStorage.setItem(key, JSON.stringify(value))
-    publishNeonUpdate(key, value)
-  })
+  localValues.forEach(([key, value]) => publishNeonUpdate(key, value))
 
-  // Bootstrap writes are best-effort and cannot blank a loaded catalog.
   if (writes.length) {
     const results = await Promise.allSettled(writes)
     results.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        console.error('Neon bootstrap write failed:', result.reason, writes[index])
-      }
+      if (result.status === 'rejected') console.error('Neon bootstrap write failed:', result.reason, writes[index])
     })
   }
 }
@@ -193,37 +228,48 @@ export async function syncAllToNeon(): Promise<void> {
 }
 
 export const stockStatusSync = {
-  async save(value: Record<string, boolean>) { localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(value)); await requireNeonSave(KEYS.STOCK_STATUS, value) },
+  async save(value: Record<string, boolean>) {
+    // Neon first. Do not report/save a local success before persistence is verified.
+    await requireNeonSave(KEYS.STOCK_STATUS, value)
+    localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(value))
+  },
   async load() { return getFromKV(KEYS.STOCK_STATUS) as Promise<Record<string, boolean> | null> },
 }
 
 export const productPricesSync = {
   async save(prices: Record<string, number>, variantPrices: Record<string, Record<string, number>>) {
+    // Persist to Neon first. If either verified write fails, throw and do not
+    // leave the browser with a value that was never successfully persisted.
+    await requireNeonSave(KEYS.PRODUCT_PRICES, prices)
+    await requireNeonSave(KEYS.VARIANT_PRICES, variantPrices)
     localStorage.setItem(KEYS.PRODUCT_PRICES, JSON.stringify(prices))
+    localStorage.setItem(LAST_KNOWN_GOOD_PRICES, JSON.stringify(prices))
     localStorage.setItem(KEYS.VARIANT_PRICES, JSON.stringify(variantPrices))
-    await Promise.all([requireNeonSave(KEYS.PRODUCT_PRICES, prices), requireNeonSave(KEYS.VARIANT_PRICES, variantPrices)])
+    localStorage.setItem(LAST_KNOWN_GOOD_VARIANT_PRICES, JSON.stringify(variantPrices))
   },
   async load() {
     const [productPrices, variantPrices] = await Promise.all([getFromKV(KEYS.PRODUCT_PRICES), getFromKV(KEYS.VARIANT_PRICES)])
-    return { productPrices, variantPrices }
+    return { productPrices: productPrices ?? readLastKnownGoodPrices(), variantPrices: variantPrices ?? readLastKnownGoodVariantPrices() }
   },
 }
 
 export const comingSoonSync = {
   async save(enabled: boolean, products: string[]) {
+    await requireNeonSave(KEYS.COMING_SOON_ENABLED, enabled)
+    await requireNeonSave(KEYS.COMING_SOON_PRODUCTS, products)
     localStorage.setItem(KEYS.COMING_SOON_ENABLED, JSON.stringify(enabled))
     localStorage.setItem(KEYS.COMING_SOON_PRODUCTS, JSON.stringify(products))
-    await Promise.all([requireNeonSave(KEYS.COMING_SOON_ENABLED, enabled), requireNeonSave(KEYS.COMING_SOON_PRODUCTS, products)])
   },
   async load() { return { enabled: await getFromKV(KEYS.COMING_SOON_ENABLED), products: await getFromKV(KEYS.COMING_SOON_PRODUCTS) } },
 }
 
 export const productsSync = {
   async save(products: Product[]) {
-    const catalog = products.length ? products : staticProducts
+    if (!Array.isArray(products) || products.length === 0) throw new Error('Refusing to save an empty product catalog')
+    const catalog = products
+    await requireNeonSave(KEYS.ALL_PRODUCTS, catalog)
     localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
     localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(catalog))
-    await requireNeonSave(KEYS.ALL_PRODUCTS, catalog)
   },
   async load() {
     const value = await getFromKV(KEYS.ALL_PRODUCTS)
@@ -233,7 +279,10 @@ export const productsSync = {
 }
 
 export const customProductsSync = {
-  async save(products: Product[]) { localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(products)); await requireNeonSave(KEYS.CUSTOM_PRODUCTS, products) },
+  async save(products: Product[]) {
+    await requireNeonSave(KEYS.CUSTOM_PRODUCTS, products)
+    localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(products))
+  },
   async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
 
