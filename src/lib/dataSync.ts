@@ -44,6 +44,11 @@ async function setInKV(key: KVKey, value: unknown): Promise<boolean> {
   }
 }
 
+async function requireNeonSave(key: KVKey, value: unknown): Promise<void> {
+  const saved = await setInKV(key, value)
+  if (!saved) throw new Error(`Neon persistence failed for ${key}`)
+}
+
 function initialStock(products: Product[]): Record<string, boolean> {
   return Object.fromEntries(products.map(product => [product.id, product.inStock !== false]))
 }
@@ -80,18 +85,15 @@ export async function syncFromNeon(): Promise<void> {
   const resolvedComingSoonProducts = Array.isArray(comingSoonProducts) ? comingSoonProducts : []
   const resolvedCustomProducts = Array.isArray(customProducts) ? customProducts : []
 
-  const writes: Promise<boolean>[] = []
-  if (!Array.isArray(allProducts) || allProducts.length === 0) writes.push(setInKV(KEYS.ALL_PRODUCTS, catalog))
-  if (stockStatus === null) writes.push(setInKV(KEYS.STOCK_STATUS, resolvedStock))
-  if (productPrices === null) writes.push(setInKV(KEYS.PRODUCT_PRICES, resolvedPrices))
-  if (variantPrices === null) writes.push(setInKV(KEYS.VARIANT_PRICES, resolvedVariantPrices))
-  if (comingSoonEnabled === null) writes.push(setInKV(KEYS.COMING_SOON_ENABLED, false))
-  if (comingSoonProducts === null) writes.push(setInKV(KEYS.COMING_SOON_PRODUCTS, []))
-  if (customProducts === null) writes.push(setInKV(KEYS.CUSTOM_PRODUCTS, []))
-  if (writes.length) {
-    const results = await Promise.all(writes)
-    if (results.some(result => !result)) throw new Error('Neon initialization failed')
-  }
+  const writes: Promise<void>[] = []
+  if (!Array.isArray(allProducts) || allProducts.length === 0) writes.push(requireNeonSave(KEYS.ALL_PRODUCTS, catalog))
+  if (stockStatus === null) writes.push(requireNeonSave(KEYS.STOCK_STATUS, resolvedStock))
+  if (productPrices === null) writes.push(requireNeonSave(KEYS.PRODUCT_PRICES, resolvedPrices))
+  if (variantPrices === null) writes.push(requireNeonSave(KEYS.VARIANT_PRICES, resolvedVariantPrices))
+  if (comingSoonEnabled === null) writes.push(requireNeonSave(KEYS.COMING_SOON_ENABLED, false))
+  if (comingSoonProducts === null) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, []))
+  if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, []))
+  if (writes.length) await Promise.all(writes)
 
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
@@ -118,12 +120,11 @@ export async function syncAllToNeon(): Promise<void> {
     const value = localStorage.getItem(key)
     if (value !== null) entries.push([key, JSON.parse(value)])
   })
-  const results = await Promise.all(entries.map(([key, value]) => setInKV(key, value)))
-  if (results.length === 0 || results.some(result => !result)) throw new Error('One or more items failed to sync to Neon')
+  await Promise.all(entries.map(([key, value]) => requireNeonSave(key, value)))
 }
 
 export const stockStatusSync = {
-  async save(value: Record<string, boolean>) { localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(value)); return syncToNeon(KEYS.STOCK_STATUS, value) },
+  async save(value: Record<string, boolean>) { localStorage.setItem(KEYS.STOCK_STATUS, JSON.stringify(value)); await requireNeonSave(KEYS.STOCK_STATUS, value) },
   async load() { return getFromKV(KEYS.STOCK_STATUS) as Promise<Record<string, boolean> | null> },
 }
 
@@ -131,8 +132,10 @@ export const productPricesSync = {
   async save(prices: Record<string, number>, variantPrices: Record<string, Record<string, number>>) {
     localStorage.setItem(KEYS.PRODUCT_PRICES, JSON.stringify(prices))
     localStorage.setItem(KEYS.VARIANT_PRICES, JSON.stringify(variantPrices))
-    const [a, b] = await Promise.all([syncToNeon(KEYS.PRODUCT_PRICES, prices), syncToNeon(KEYS.VARIANT_PRICES, variantPrices)])
-    return a && b
+    await Promise.all([
+      requireNeonSave(KEYS.PRODUCT_PRICES, prices),
+      requireNeonSave(KEYS.VARIANT_PRICES, variantPrices),
+    ])
   },
   async load() {
     const [productPrices, variantPrices] = await Promise.all([getFromKV(KEYS.PRODUCT_PRICES), getFromKV(KEYS.VARIANT_PRICES)])
@@ -144,8 +147,10 @@ export const comingSoonSync = {
   async save(enabled: boolean, products: string[]) {
     localStorage.setItem(KEYS.COMING_SOON_ENABLED, JSON.stringify(enabled))
     localStorage.setItem(KEYS.COMING_SOON_PRODUCTS, JSON.stringify(products))
-    const [a, b] = await Promise.all([syncToNeon(KEYS.COMING_SOON_ENABLED, enabled), syncToNeon(KEYS.COMING_SOON_PRODUCTS, products)])
-    return a && b
+    await Promise.all([
+      requireNeonSave(KEYS.COMING_SOON_ENABLED, enabled),
+      requireNeonSave(KEYS.COMING_SOON_PRODUCTS, products),
+    ])
   },
   async load() { return { enabled: await getFromKV(KEYS.COMING_SOON_ENABLED), products: await getFromKV(KEYS.COMING_SOON_PRODUCTS) } },
 }
@@ -154,18 +159,18 @@ export const productsSync = {
   async save(products: Product[]) {
     const catalog = products.length ? products : staticProducts
     localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
-    return syncToNeon(KEYS.ALL_PRODUCTS, catalog)
+    await requireNeonSave(KEYS.ALL_PRODUCTS, catalog)
   },
   async load() {
     const value = await getFromKV(KEYS.ALL_PRODUCTS)
     if (Array.isArray(value) && value.length) return value as Product[]
-    if (!await setInKV(KEYS.ALL_PRODUCTS, staticProducts)) throw new Error('Failed to seed product catalog in Neon')
+    await requireNeonSave(KEYS.ALL_PRODUCTS, staticProducts)
     return staticProducts
   },
 }
 
 export const customProductsSync = {
-  async save(products: Product[]) { localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(products)); return syncToNeon(KEYS.CUSTOM_PRODUCTS, products) },
+  async save(products: Product[]) { localStorage.setItem(KEYS.CUSTOM_PRODUCTS, JSON.stringify(products)); await requireNeonSave(KEYS.CUSTOM_PRODUCTS, products) },
   async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
 
