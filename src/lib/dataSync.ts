@@ -45,8 +45,7 @@ async function setInKV(key: KVKey, value: unknown): Promise<boolean> {
 }
 
 async function requireNeonSave(key: KVKey, value: unknown): Promise<void> {
-  const saved = await setInKV(key, value)
-  if (!saved) throw new Error(`Neon persistence failed for ${key}`)
+  if (!await setInKV(key, value)) throw new Error(`Neon persistence failed for ${key}`)
 }
 
 function initialStock(products: Product[]): Record<string, boolean> {
@@ -63,6 +62,30 @@ function initialVariantPrices(products: Product[]): Record<string, Record<string
     if (product.variants?.length) result[product.id] = Object.fromEntries(product.variants.map(variant => [variant.weight, variant.price]))
   })
   return result
+}
+
+function publishNeonUpdate(key: KVKey, value: unknown) {
+  if (typeof window === 'undefined') return
+  const events: Record<KVKey, string> = {
+    [KEYS.STOCK_STATUS]: 'kefas_stock_updated',
+    [KEYS.PRODUCT_PRICES]: 'kefas_prices_updated',
+    [KEYS.VARIANT_PRICES]: 'kefas_prices_updated',
+    [KEYS.ALL_PRODUCTS]: 'kefas_products_updated',
+    [KEYS.COMING_SOON_ENABLED]: 'kefas_coming_soon_updated',
+    [KEYS.COMING_SOON_PRODUCTS]: 'kefas_coming_soon_updated',
+    [KEYS.CUSTOM_PRODUCTS]: 'kefas_products_updated',
+  }
+  const eventName = events[key]
+  if (key === KEYS.PRODUCT_PRICES || key === KEYS.VARIANT_PRICES) {
+    window.dispatchEvent(new CustomEvent('kefas_prices_updated', {
+      detail: {
+        productPrices: JSON.parse(localStorage.getItem(KEYS.PRODUCT_PRICES) || '{}'),
+        variantPrices: JSON.parse(localStorage.getItem(KEYS.VARIANT_PRICES) || '{}'),
+      },
+    }))
+    return
+  }
+  window.dispatchEvent(new CustomEvent(eventName, { detail: value }))
 }
 
 export async function syncFromNeon(): Promise<void> {
@@ -104,7 +127,10 @@ export async function syncFromNeon(): Promise<void> {
     [KEYS.COMING_SOON_PRODUCTS, resolvedComingSoonProducts],
     [KEYS.CUSTOM_PRODUCTS, resolvedCustomProducts],
   ]
-  localValues.forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)))
+  localValues.forEach(([key, value]) => {
+    localStorage.setItem(key, JSON.stringify(value))
+    publishNeonUpdate(key, value)
+  })
 }
 
 export async function syncToNeon(key: KVKey, value: unknown): Promise<boolean> {
@@ -132,10 +158,7 @@ export const productPricesSync = {
   async save(prices: Record<string, number>, variantPrices: Record<string, Record<string, number>>) {
     localStorage.setItem(KEYS.PRODUCT_PRICES, JSON.stringify(prices))
     localStorage.setItem(KEYS.VARIANT_PRICES, JSON.stringify(variantPrices))
-    await Promise.all([
-      requireNeonSave(KEYS.PRODUCT_PRICES, prices),
-      requireNeonSave(KEYS.VARIANT_PRICES, variantPrices),
-    ])
+    await Promise.all([requireNeonSave(KEYS.PRODUCT_PRICES, prices), requireNeonSave(KEYS.VARIANT_PRICES, variantPrices)])
   },
   async load() {
     const [productPrices, variantPrices] = await Promise.all([getFromKV(KEYS.PRODUCT_PRICES), getFromKV(KEYS.VARIANT_PRICES)])
@@ -147,10 +170,7 @@ export const comingSoonSync = {
   async save(enabled: boolean, products: string[]) {
     localStorage.setItem(KEYS.COMING_SOON_ENABLED, JSON.stringify(enabled))
     localStorage.setItem(KEYS.COMING_SOON_PRODUCTS, JSON.stringify(products))
-    await Promise.all([
-      requireNeonSave(KEYS.COMING_SOON_ENABLED, enabled),
-      requireNeonSave(KEYS.COMING_SOON_PRODUCTS, products),
-    ])
+    await Promise.all([requireNeonSave(KEYS.COMING_SOON_ENABLED, enabled), requireNeonSave(KEYS.COMING_SOON_PRODUCTS, products)])
   },
   async load() { return { enabled: await getFromKV(KEYS.COMING_SOON_ENABLED), products: await getFromKV(KEYS.COMING_SOON_PRODUCTS) } },
 }
@@ -174,8 +194,18 @@ export const customProductsSync = {
   async load() { return getFromKV(KEYS.CUSTOM_PRODUCTS) as Promise<Product[] | null> },
 }
 
+// Legacy names retained for source compatibility.
 export const syncFromSupabase = syncFromNeon
 export const syncToSupabase = syncToNeon
 export const syncAllToSupabase = syncAllToNeon
+
+// Keep open storefront tabs aligned with Neon without requiring a hard refresh.
+// The interval is deliberately conservative to avoid excessive database/API traffic.
+if (typeof window !== 'undefined') {
+  const refresh = () => syncFromNeon().catch(error => console.error('Background Neon refresh failed:', error))
+  window.setInterval(refresh, 30000)
+  window.addEventListener('focus', refresh)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh() })
+}
 
 export { KEYS }
