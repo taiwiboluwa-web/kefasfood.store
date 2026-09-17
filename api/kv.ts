@@ -173,16 +173,22 @@ export default async function handler(req: any, res: any) {
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
     `;
 
-    // PostgreSQL jsonb normalizes object key order, so comparing JSON.stringify()
-    // output can falsely report a successful write as a mismatch. Compare the
-    // actual JSONB value in Neon instead; this validates semantic equality.
-    const persisted = await sql`
-      SELECT value, updated_at
-      FROM kv_store_da50176a
-      WHERE key = ${payload.key}
-        AND value = ${serializedValue}::jsonb
-      LIMIT 1
-    `;
+    // Verify the exact semantic JSONB value. Neon/Postgres normally returns
+    // the write immediately, but retry briefly to tolerate a transient
+    // serverless connection/read timing issue instead of rejecting a valid save.
+    let persisted: any[] = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      persisted = await sql`
+        SELECT value, updated_at
+        FROM kv_store_da50176a
+        WHERE key = ${payload.key}
+          AND value = ${serializedValue}::jsonb
+        LIMIT 1
+      `;
+      if (persisted.length > 0) break;
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+
     if (persisted.length === 0) {
       console.error('Neon KV verification mismatch:', payload.key);
       return sendJson(res, { error: 'Neon write verification failed' }, 500);
