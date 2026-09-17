@@ -11,6 +11,8 @@ const KEYS = {
   CUSTOM_PRODUCTS: 'kefas_custom_products',
 } as const
 
+const LAST_KNOWN_GOOD_PRODUCTS = 'kefas_last_known_good_products'
+
 type KVKey = (typeof KEYS)[keyof typeof KEYS]
 
 async function getFromKV(key: KVKey): Promise<any | null> {
@@ -76,6 +78,7 @@ function publishNeonUpdate(key: KVKey, value: unknown) {
     [KEYS.COMING_SOON_PRODUCTS]: 'kefas_coming_soon_updated',
     [KEYS.CUSTOM_PRODUCTS]: 'kefas_products_updated',
   }
+  if (key === KEYS.ALL_PRODUCTS && (!Array.isArray(value) || value.length === 0)) return
   const eventName = events[key]
   if (key === KEYS.PRODUCT_PRICES || key === KEYS.VARIANT_PRICES) {
     window.dispatchEvent(new CustomEvent('kefas_prices_updated', {
@@ -87,6 +90,19 @@ function publishNeonUpdate(key: KVKey, value: unknown) {
     return
   }
   window.dispatchEvent(new CustomEvent(eventName, { detail: value }))
+}
+
+function readLastKnownGoodCatalog(): Product[] | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const snapshot = localStorage.getItem(LAST_KNOWN_GOOD_PRODUCTS) || localStorage.getItem(KEYS.ALL_PRODUCTS)
+    if (!snapshot) return null
+    const parsed = JSON.parse(snapshot)
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null
+  } catch (error) {
+    console.error('Failed to read last-known-good catalog:', error)
+    return null
+  }
 }
 
 export async function syncFromNeon(): Promise<void> {
@@ -105,7 +121,13 @@ export async function syncFromNeon(): Promise<void> {
   // Never replace a working storefront/admin catalog with an empty or missing
   // response caused by a transient network, deployment, or Neon connection issue.
   if (!Array.isArray(allProducts) || allProducts.length === 0) {
-    console.warn('Neon catalog response was empty/unavailable; preserving current product catalog')
+    const lastKnownGood = readLastKnownGoodCatalog()
+    if (lastKnownGood) {
+      localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(lastKnownGood))
+      localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(lastKnownGood))
+      publishNeonUpdate(KEYS.ALL_PRODUCTS, lastKnownGood)
+    }
+    console.warn('Neon catalog response was empty/unavailable; preserving last-known-good product catalog')
     return
   }
 
@@ -125,7 +147,10 @@ export async function syncFromNeon(): Promise<void> {
   if (comingSoonProducts === null) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, []))
   if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, []))
 
-  // Hydrate only from a validated non-empty Neon catalog.
+  // Persist a last-known-good catalog before any optional bootstrap writes.
+  localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
+  localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(catalog))
+
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
     [KEYS.PRODUCT_PRICES, resolvedPrices],
@@ -197,12 +222,13 @@ export const productsSync = {
   async save(products: Product[]) {
     const catalog = products.length ? products : staticProducts
     localStorage.setItem(KEYS.ALL_PRODUCTS, JSON.stringify(catalog))
+    localStorage.setItem(LAST_KNOWN_GOOD_PRODUCTS, JSON.stringify(catalog))
     await requireNeonSave(KEYS.ALL_PRODUCTS, catalog)
   },
   async load() {
     const value = await getFromKV(KEYS.ALL_PRODUCTS)
     if (Array.isArray(value) && value.length) return value as Product[]
-    return staticProducts
+    return readLastKnownGoodCatalog() || staticProducts
   },
 }
 
