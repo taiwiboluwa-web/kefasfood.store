@@ -116,8 +116,10 @@ export async function syncFromNeon(): Promise<void> {
   if (comingSoonEnabled === null) writes.push(requireNeonSave(KEYS.COMING_SOON_ENABLED, false))
   if (comingSoonProducts === null) writes.push(requireNeonSave(KEYS.COMING_SOON_PRODUCTS, []))
   if (customProducts === null) writes.push(requireNeonSave(KEYS.CUSTOM_PRODUCTS, []))
-  if (writes.length) await Promise.all(writes)
 
+  // Hydrate the browser from Neon before attempting optional bootstrap writes.
+  // A failed write for an optional/missing key must never prevent the admin
+  // inventory from receiving the authoritative catalog, prices, and stock data.
   const localValues: Array<[KVKey, unknown]> = [
     [KEYS.STOCK_STATUS, resolvedStock],
     [KEYS.PRODUCT_PRICES, resolvedPrices],
@@ -131,6 +133,17 @@ export async function syncFromNeon(): Promise<void> {
     localStorage.setItem(key, JSON.stringify(value))
     publishNeonUpdate(key, value)
   })
+
+  // Bootstrap writes are best-effort because the remote data has already been
+  // loaded into the UI. Do not make a failed optional write blank the inventory.
+  if (writes.length) {
+    const results = await Promise.allSettled(writes)
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error('Neon bootstrap write failed:', result.reason, writes[index])
+      }
+    })
+  }
 }
 
 export async function syncToNeon(key: KVKey, value: unknown): Promise<boolean> {
